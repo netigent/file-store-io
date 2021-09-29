@@ -16,10 +16,11 @@ namespace Netigent.Utils.FileStoreIO
 		public bool FileSystemStorageAvailable { get; internal set; } = false;
 		public List<string> Messages { get; internal set; } = new();
 
-		private readonly IOptions<FileIOConfig> _config;
+		private readonly IOptions<FileStoreIOConfig> _config;
 		private readonly string _fileStoreRoot;
 		private readonly InternalDatabaseClient _ioClient;
-		private readonly string _dynamicFileFlag;
+		private readonly string _filePrefix;
+		private readonly bool _useUniqueName;
 
 		private const string _notSpecifiedFlag = "_$";
 		private const string _notSpecifiedSchema = "dbo";
@@ -28,13 +29,14 @@ namespace Netigent.Utils.FileStoreIO
 		/// FileIOClient using FileIOConfig
 		/// </summary>
 		/// <param name="fileIOConfig"></param>
-		public FileStoreIOClient(IOptions<FileIOConfig> fileIOConfig)
+		public FileStoreIOClient(IOptions<FileStoreIOConfig> fileIOConfig)
 		{
 			_config = fileIOConfig;
 
 			_ioClient = new InternalDatabaseClient(_config.Value.Database, _config.Value.DatabaseSchema);
 			_fileStoreRoot = _config.Value.FileStoreRoot;
-			_dynamicFileFlag = _config.Value.FileFlag ?? _notSpecifiedFlag;
+			_filePrefix = _config.Value.FilePrefix ?? _notSpecifiedFlag;
+			_useUniqueName = _config.Value.StoreFileAsUniqueRef;
 
 			Startup(out string fileSystemErrorMessage);
 
@@ -56,14 +58,16 @@ namespace Netigent.Utils.FileStoreIO
 		/// </summary>
 		/// <param name="databaseConnection">Database to use for fileStoreIndex table, account in connection string should have the ability to create tables in that database</param>
 		/// <param name="fileStoreRoot">Location you wish to store files uploaded to the filesystem e.g. c:\temp\filestore \\myfiles\fileuploads</param>
-		/// <param name="dynamicFileFlag">Will mark the files with a prefix that is used in the file system</param>
-		/// <param name="dbSchema">Database schema to create or use the FileStoreIndex table, default is dbo</param>
-		public FileStoreIOClient(string databaseConnection, string fileStoreRoot, string dynamicFileFlag = _notSpecifiedFlag, string dbSchema = _notSpecifiedSchema)
+		/// <param name="filePrefix">(Optional) Default=_$, Will mark the files with a prefix that is used in the file system</param>
+		/// <param name="dbSchema">(Optional) Default=dbo, database schema to create or use the FileStoreIndex table, default is dbo</param>
+		/// <param name="useUniqueRef">(Optional) Default=true, means files on filesystem will be stored as 436265634626235245.doc etc rather than myfile.doc</param>
+		public FileStoreIOClient(string databaseConnection, string fileStoreRoot, string filePrefix = _notSpecifiedFlag, string dbSchema = _notSpecifiedSchema, bool useUniqueRef = true)
 		{
 			//Create the filestore client
 			_ioClient = new InternalDatabaseClient(databaseConnection, dbSchema);
 			_fileStoreRoot = fileStoreRoot;
-			_dynamicFileFlag = dynamicFileFlag;
+			_filePrefix = filePrefix;
+			_useUniqueName = _config.Value.StoreFileAsUniqueRef;
 
 			Startup(out string fileSystemErrorMessage);
 
@@ -135,7 +139,8 @@ namespace Netigent.Utils.FileStoreIO
 
 					try
 					{
-						var successfullFullFilePath = Write2Filesystem($"{fileObject.Name}{fileObject.Extension}", fileObject.Data, customer, fileTypeGroup);
+						var fileName = _useUniqueName ? $"{fileObject.FileRef.Substring(_filePrefix.Length, fileObject.FileRef.Length - _filePrefix.Length)}{fileObject.Extension}" : $"{fileObject.Name}{fileObject.Extension}";
+						var successfullFullFilePath = Write2Filesystem(fileName, fileObject.Data, customer, fileTypeGroup);
 						
 						if (string.IsNullOrEmpty(successfullFullFilePath))
 							return string.Empty;
@@ -261,7 +266,7 @@ namespace Netigent.Utils.FileStoreIO
 
 			do
 			{
-				generatedFileRef = $"{_dynamicFileFlag}{Guid.NewGuid().ToString().Replace("-", string.Empty)}";
+				generatedFileRef = $"{_filePrefix}{Guid.NewGuid().ToString().Replace("-", string.Empty)}";
 			} while (!_ioClient.FileStore_IsFileRefUnique(generatedFileRef));
 
 			return generatedFileRef;
