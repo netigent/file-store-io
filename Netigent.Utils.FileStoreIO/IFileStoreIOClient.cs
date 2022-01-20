@@ -10,11 +10,13 @@ namespace Netigent.Utils.FileStoreIO
 	{
 		bool IsReady { get; }
 		List<string> Messages { get; }
-
-		Task<string> File_Upsert(IFormFile file, FileStorageProvider fileLocation, string description, string customer = "", string filegroup = "");
-		string File_Upsert(InternalFileModel model, FileStorageProvider fileLocation, string customer = "", string filegroup = "");
+		Task<string> File_Upsert(IFormFile file, FileStorageProvider fileLocation, string description, string mainGroup = "", string subGroup = "");
+		string File_Upsert(InternalFileModel model, FileStorageProvider fileLocation, string mainGroup = "", string subGroup = "");
 		Task<FileObjectModel> File_Get(string fileRef);
 		Task<InternalFileModel> File_Delete(string fileRef);
 		Task<List<InternalFileModel>> Files_GetAll();
+		Task<List<InternalFileModel>> Files_GetByMainGroup(string mainGroup);
+		Task<List<InternalFileModel>> Files_GetBySubGroup(string subGroup);
+		Task<List<InternalFileModel>> Files_GetByMainAndSubGroup(string mainGroup, string subGroup);
 	}
 }

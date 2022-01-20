@@ -41,7 +41,7 @@ namespace Netigent.Utils.FileStoreIO.Dal
 							CREATE TABLE [{_schemaName}].[FileStoreIndex](
 								[Id] [bigint] IDENTITY(1,1) NOT NULL,
 								[Name] [varchar](250) NULL,
-								[FileType] [varchar](50) NULL,
+								[MimeType] [varchar](250) NULL,
 								[Extension] [varchar](50) NULL,
 								[Description] [varchar](500) NULL,
 								[UploadedBy] [varchar](250) NULL,
@@ -50,7 +50,29 @@ namespace Netigent.Utils.FileStoreIO.Dal
 								[FileRef] [varchar](50) NULL,
 								[Created] [datetime] NULL DEFAULT (getdate()),
 								[Modified] [datetime] NULL DEFAULT (getdate()),
-								[FileLocation] [int] NULL)
+								[FileLocation] [int] NULL,
+								[MainGroup] [varchar](250) NULL,
+								[SubGroup] [varchar](250) NULL ) 
+						END
+
+						If not exists(select * from INFORMATION_SCHEMA.COLUMNS where TABLE_SCHEMA = '{_schemaName}' and TABLE_NAME = 'FileStoreIndex' and COLUMN_NAME = 'MainGroup')
+						BEGIN
+							ALTER TABLE [{_schemaName}].[FileStoreIndex] ADD
+							[MainGroup] [varchar](250) NULL
+						END
+
+						If not exists(select * from INFORMATION_SCHEMA.COLUMNS where TABLE_SCHEMA = '{_schemaName}' and TABLE_NAME = 'FileStoreIndex' and COLUMN_NAME = 'SubGroup')
+						BEGIN
+							ALTER TABLE [{_schemaName}].[FileStoreIndex] ADD
+							[SubGroup] [varchar](250) NULL
+						END
+
+						If not exists(select * from INFORMATION_SCHEMA.COLUMNS where TABLE_SCHEMA = '{_schemaName}' and TABLE_NAME = 'FileStoreIndex' and COLUMN_NAME = 'MimeType')
+						BEGIN
+							ALTER TABLE [{_schemaName}].[FileStoreIndex] ADD
+							[MimeType] [varchar](250) NULL
+									
+							EXEC('UPDATE [{_schemaName}].[FileStoreIndex] SET [MimeType] = [MimeType]')
 						END";
 
 				var schemaResult = ExecuteQuery(schemaExists, null);

@@ -5,6 +5,17 @@ A generic layer to allow the saving and loading of file from configurable stores
 Initially thanks for considering using this library - we hope that it gives you some benefits.
 In terms of using the Library the following should get you up and running quickly
 
+# Version Changes
+**1.0.2** 'Customer' has been relabelled to 'MainGroup', and 'FileTypeGroup' relabelled to 'SubGroup' for clarity and added functionality to access those. 'FileType' is also now known as 'MimeType' to reflect the data stored.
+
+***Database*** If you can best to delete the table [FileStoreIndex] and allow recreation, but you dont have too. The Client will auto upgrade your database, you can then manually remove column [FileType] from [FileStoreIndex] if you want - its no longer used!
+
+```
+	Files_GetByMainGroup(string mainGroup);
+	Files_GetBySubGroup(string subGroup);
+	Files_GetByMainAndSubGroup(string mainGroup, string subGroup);
+```
+
 ## Direct Usage
 You can use the client directly as follows
 
