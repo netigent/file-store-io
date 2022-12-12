@@ -2,6 +2,7 @@
 using Microsoft.Extensions.Options;
 using Netigent.Utils.FileStoreIO.Dal;
 using Netigent.Utils.FileStoreIO.Enum;
+using Netigent.Utils.FileStoreIO.Helpers;
 using Netigent.Utils.FileStoreIO.Models;
 using System;
 using System.Collections.Generic;
@@ -82,6 +83,42 @@ namespace Netigent.Utils.FileStoreIO
                 if (!string.IsNullOrEmpty(fileSystemErrorMessage))
                     Messages.Add(fileSystemErrorMessage);
             }
+        }
+
+        /// <summary>
+        /// Insert / Update a File to the intended file storage
+        /// </summary>
+        /// <param name="file">File as an IFormFile bject</param>
+        /// <param name="fileContents">byte[] of the file contents.</param>
+        /// <param name="fullFilename">Filename with Extenstion.</param>
+        /// <param name="storageType">Where to store file, current options FileSystem or Database</param>
+        /// <param name="description">(Optional) Description of the file, if omitted, will use the filename</param>
+        /// <param name="mainGroup">(Optional) Used when storing to filesystem will store as \\myserver\filestore\{mainGroup}\{subGroup}\filename.ext</param>
+        /// <param name="subGroup">(Optional) Used when storing to filesystem will store as \\myserver\filestore\{mainGroup}\{subGroup}\filename.ext</param>
+        /// <param name="created">(Optional) Created Date/Time</param>
+        /// <returns>A unique file-reference for getting the file, if blank issues creating the file</returns>
+        public string File_Upsert(byte[] fileContents, string fullFilename, FileStorageProvider storageType, string description = "", string mainGroup = "", string subGroup = "", DateTime created = default)
+        {
+            var fileName = Path.GetFileNameWithoutExtension(fullFilename);
+            var extension = Path.GetExtension(fullFilename);
+            var mimeType = MimeHelper.GetMimeType(extension);
+
+            var createdDate = created == null || created == default ? DateTime.UtcNow : created;
+
+            var fileModel = new InternalFileModel
+            {
+                Created = createdDate,
+                MimeType = mimeType,
+                Extension = extension,
+                Name = fileName,
+                Description = description ?? fileName,
+                FileLocation = (int)storageType,
+                MainGroup = mainGroup,
+                SubGroup = subGroup,
+                Data = fileContents,
+            };
+
+            return File_Upsert(fileModel, storageType, mainGroup, subGroup);
         }
 
         /// <summary>

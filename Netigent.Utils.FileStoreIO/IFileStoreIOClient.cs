@@ -1,6 +1,7 @@
 ﻿using Microsoft.AspNetCore.Http;
 using Netigent.Utils.FileStoreIO.Enum;
 using Netigent.Utils.FileStoreIO.Models;
+using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 
@@ -10,7 +11,8 @@ namespace Netigent.Utils.FileStoreIO
 	{
 		bool IsReady { get; }
 		List<string> Messages { get; }
-		Task<string> File_Upsert(IFormFile file, FileStorageProvider fileLocation, string description, string mainGroup = "", string subGroup = "");
+		string File_Upsert(byte[] fileContents, string fullFilename, FileStorageProvider storageType, string description = "", string mainGroup = "", string subGroup = "", DateTime created = default);
+        Task<string> File_Upsert(IFormFile file, FileStorageProvider fileLocation, string description, string mainGroup = "", string subGroup = "");
 		string File_Upsert(InternalFileModel model, FileStorageProvider fileLocation, string mainGroup = "", string subGroup = "");
 		Task<FileObjectModel> File_Get(string fileRef);
 		Task<InternalFileModel> File_Delete(string fileRef);
