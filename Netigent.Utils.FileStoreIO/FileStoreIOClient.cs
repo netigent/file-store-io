@@ -7,37 +7,46 @@ using Netigent.Utils.FileStoreIO.Models;
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Threading.Tasks;
 
 namespace Netigent.Utils.FileStoreIO
 {
     public class FileStoreIOClient : IFileStoreIOClient
     {
+        #region public props
         public bool IsReady { get; internal set; } = false;
         public bool FileSystemStorageAvailable { get; internal set; } = false;
         public List<string> Messages { get; internal set; } = new();
+        #endregion
 
-        private readonly IOptions<FileStoreIOConfig> _config;
+        #region internal settings
         private readonly string _fileStoreRoot;
         private readonly InternalDatabaseClient _ioClient;
         private readonly string _filePrefix;
         private readonly bool _useUniqueName;
+        private readonly int _maxVersions;
 
         private const string _notSpecifiedFlag = "_$";
+        private const string _versionFlag = "__ver_";
         private const string _notSpecifiedSchema = "dbo";
+        private const string _fileFlag = @":\";
+        private const string _internetFlag = @"://";
+        private const string _networkFlag = @"\\";
+        #endregion
 
+        #region ctor
         /// <summary>
         /// FileIOClient using FileIOConfig
         /// </summary>
         /// <param name="fileIOConfig"></param>
         public FileStoreIOClient(IOptions<FileStoreIOConfig> fileIOConfig)
         {
-            _config = fileIOConfig;
-
-            _ioClient = new InternalDatabaseClient(_config.Value.Database, _config.Value.DatabaseSchema);
-            _fileStoreRoot = _config.Value.FileStoreRoot;
-            _filePrefix = _config.Value.FilePrefix ?? _notSpecifiedFlag;
-            _useUniqueName = _config.Value.StoreFileAsUniqueRef;
+            _ioClient = new InternalDatabaseClient(fileIOConfig.Value.Database, fileIOConfig.Value.DatabaseSchema);
+            _fileStoreRoot = fileIOConfig.Value.FileStoreRoot;
+            _filePrefix = fileIOConfig.Value.FilePrefix ?? _notSpecifiedFlag;
+            _useUniqueName = fileIOConfig.Value.StoreFileAsUniqueRef;
+            _maxVersions = fileIOConfig.Value.MaxVersions > 1 ? fileIOConfig.Value.MaxVersions : 1;
 
             Startup(out string fileSystemErrorMessage);
 
@@ -62,13 +71,22 @@ namespace Netigent.Utils.FileStoreIO
         /// <param name="filePrefix">(Optional) Default=_$, Will mark the files with a prefix that is used in the file system</param>
         /// <param name="dbSchema">(Optional) Default=dbo, database schema to create or use the FileStoreIndex table, default is dbo</param>
         /// <param name="useUniqueRef">(Optional) Default=true, means files on filesystem will be stored as 436265634626235245.doc etc rather than myfile.doc</param>
-        public FileStoreIOClient(string databaseConnection, string fileStoreRoot, string filePrefix = _notSpecifiedFlag, string dbSchema = _notSpecifiedSchema, bool useUniqueRef = true)
+        public FileStoreIOClient(
+            string databaseConnection,
+            string fileStoreRoot,
+            string filePrefix = _notSpecifiedFlag,
+            string dbSchema = _notSpecifiedSchema,
+            bool useUniqueRef = true,
+            int maxVersions = 1,
+            FileStorageProvider defaultFileStore = FileStorageProvider.Database
+            )
         {
             //Create the filestore client
             _ioClient = new InternalDatabaseClient(databaseConnection, dbSchema);
             _fileStoreRoot = fileStoreRoot;
             _filePrefix = filePrefix;
-            _useUniqueName = _config.Value.StoreFileAsUniqueRef;
+            _useUniqueName = useUniqueRef;
+            _maxVersions = maxVersions > 1 ? maxVersions : 1;
 
             Startup(out string fileSystemErrorMessage);
 
@@ -84,26 +102,18 @@ namespace Netigent.Utils.FileStoreIO
                     Messages.Add(fileSystemErrorMessage);
             }
         }
+        #endregion
 
-        /// <summary>
-        /// Insert / Update a File to the intended file storage
-        /// </summary>
-        /// <param name="file">File as an IFormFile bject</param>
-        /// <param name="fileContents">byte[] of the file contents.</param>
-        /// <param name="fullFilename">Filename with Extenstion.</param>
-        /// <param name="storageType">Where to store file, current options FileSystem or Database</param>
-        /// <param name="description">(Optional) Description of the file, if omitted, will use the filename</param>
-        /// <param name="mainGroup">(Optional) Used when storing to filesystem will store as \\myserver\filestore\{mainGroup}\{subGroup}\filename.ext</param>
-        /// <param name="subGroup">(Optional) Used when storing to filesystem will store as \\myserver\filestore\{mainGroup}\{subGroup}\filename.ext</param>
-        /// <param name="created">(Optional) Created Date/Time</param>
-        /// <returns>A unique file-reference for getting the file, if blank issues creating the file</returns>
-        public string File_Upsert(byte[] fileContents, string fullFilename, FileStorageProvider storageType, string description = "", string mainGroup = "", string subGroup = "", DateTime created = default)
+        #region interface implementations
+
+        /// <inheritdoc />
+        public string File_Upsert(byte[] fileContents, string fullFilename, FileStorageProvider fileLocation = FileStorageProvider.Database, string description = "", string mainGroup = "", string subGroup = "", DateTime created = default)
         {
             var fileName = Path.GetFileNameWithoutExtension(fullFilename);
             var extension = Path.GetExtension(fullFilename);
             var mimeType = MimeHelper.GetMimeType(extension);
 
-            var createdDate = created == null || created == default ? DateTime.UtcNow : created;
+            var createdDate = created == default ? DateTime.UtcNow : created;
 
             var fileModel = new InternalFileModel
             {
@@ -112,25 +122,17 @@ namespace Netigent.Utils.FileStoreIO
                 Extension = extension,
                 Name = fileName,
                 Description = description ?? fileName,
-                FileLocation = (int)storageType,
+                FileLocation = (int)fileLocation,
                 MainGroup = mainGroup,
                 SubGroup = subGroup,
                 Data = fileContents,
             };
 
-            return File_Upsert(fileModel, storageType, mainGroup, subGroup);
+            return File_Upsert(fileModel, fileLocation, mainGroup, subGroup);
         }
 
-        /// <summary>
-        /// Insert / Update a File to the intended file storage
-        /// </summary>
-        /// <param name="file">File as an IFormFile bject</param>
-        /// <param name="storageType">Where to store file, current options FileSystem or Database</param>
-        /// <param name="description">(Optional) Description of the file, if omitted, will use the filename</param>
-        /// <param name="mainGroup">(Optional) Used when storing to filesystem will store as \\myserver\filestore\{mainGroup}\{subGroup}\filename.ext</param>
-        /// <param name="subGroup">(Optional) Used when storing to filesystem will store as \\myserver\filestore\{mainGroup}\{subGroup}\filename.ext</param>
-        /// <returns>A unique file-reference for getting the file, if blank issues creating the file</returns>
-        public async Task<string> File_Upsert(IFormFile file, FileStorageProvider storageType, string description = "", string mainGroup = "", string subGroup = "")
+        /// <inheritdoc />
+        public async Task<string> File_Upsert(IFormFile file, FileStorageProvider fileLocation = FileStorageProvider.Database, string description = "", string mainGroup = "", string subGroup = "")
         {
             var fileName = Path.GetFileNameWithoutExtension(file.FileName);
             var extension = Path.GetExtension(file.FileName);
@@ -141,7 +143,7 @@ namespace Netigent.Utils.FileStoreIO
                 Extension = extension,
                 Name = fileName,
                 Description = description ?? fileName,
-                FileLocation = (int)storageType,
+                FileLocation = (int)fileLocation,
                 MainGroup = mainGroup,
                 SubGroup = subGroup
             };
@@ -152,9 +154,123 @@ namespace Netigent.Utils.FileStoreIO
                 fileModel.Data = dataStream.ToArray();
             }
 
-            return File_Upsert(fileModel, storageType, mainGroup, subGroup);
+            return File_Upsert(fileModel, fileLocation, mainGroup, subGroup);
         }
 
+        /// <inheritdoc />
+        public async Task<FileObjectModel> File_Get(string fileRef, int priorVersion = 0)
+        {
+            //Grab the fileRecord and if stored in database get the binary also
+            var fileList = _ioClient.FileStore_GetAllByRef(fileRef);
+
+            // If we have files and the version we're being asked for doesnt exceed the array
+            if (fileList?.Count > 0 && fileList?.Count > priorVersion)
+            {
+                //Try and get the file from index
+                InternalFileModel? file2Get = fileList[priorVersion];
+
+                if (file2Get != null)
+                {
+                    // Pull specific file by id
+                    // If this is a DB record it will now have the data
+                    InternalFileModel file = _ioClient.FileStore_Get(file2Get.Id);
+
+                    // Chop off version info
+                    string[] fileNameParts = file.Name.Split(new string[] { _versionFlag }, StringSplitOptions.RemoveEmptyEntries);
+                    string versionInfo = fileNameParts.Length > 1 ? $" (Version: {fileNameParts[1]})" : string.Empty;
+
+                    // Build file for output
+                    FileObjectModel outputFile = new()
+                    {
+                        FileRef = file.FileRef,
+                        ContentType = file.MimeType,
+                        Description = $"{file.Description}{versionInfo}",
+                        Name = $"{fileNameParts[0]}{file.Extension}"
+                    };
+
+                    // Find the file data for the output
+                    switch (file.FileLocation)
+                    {
+                        case (int)FileStorageProvider.FileSystem:
+                            string absoluteFilePath = GetAbsoluteFilePath(file.FilePath);
+
+                            if (!File.Exists(absoluteFilePath))
+                                return null;
+
+                            //Get from filesystem
+                            var memory = new MemoryStream();
+                            using (var stream = new FileStream(absoluteFilePath, FileMode.Open))
+                            {
+                                await stream.CopyToAsync(memory);
+                            }
+                            memory.Position = 0;
+                            outputFile.Data = memory.ToArray();
+                            break;
+
+
+                        case (int)FileStorageProvider.Database:
+                            outputFile.Data = file.Data;
+                            break;
+
+                        default:
+                            break;
+                    }
+
+                    return outputFile;
+                }
+            }
+
+            return null;
+        }
+
+        /// <inheritdoc />
+        public bool File_Delete(string fileRef)
+        {
+            try
+            {
+                // Ensure the Id was def entered
+                if (!string.IsNullOrEmpty(fileRef))
+                {
+                    // Ensure we dont have more versions of the file than permitted.
+                    List<InternalFileModel> fileCopies = File_GetVersionsInfo(fileRef);
+                    if (fileCopies?.Count > 0)
+                    {
+                        for (int i = 0; i < fileCopies.Count; i++)
+                        {
+                            // Prune versions beyond, max copies
+                            var file2Delete = fileCopies[i];
+                            _ = DeleteFile(file2Delete);
+                        }
+                    }
+                }
+            }
+            catch (Exception)
+            {
+                return false;
+            }
+
+            // All is right with the world!
+            return true;
+        }
+
+        /// <inheritdoc/>
+        public List<InternalFileModel> File_GetVersionsInfo(string fileRef)
+        {
+            // Ensure the Id was def entered
+            if (!string.IsNullOrEmpty(fileRef))
+            {
+                // Ensure we dont have more versions of the file than permitted.
+                return _ioClient.FileStore_GetAllByRef(fileRef);
+            }
+
+            return default;
+        }
+
+        /// <inheritdoc/>
+        public List<InternalFileModel> Files_GetAll(string mainGroup = "", string subGroup = "") => _ioClient.FileStore_GetAllByLocation(mainGroup, subGroup);
+        #endregion
+
+        #region internal functions
         /// <summary>
         /// Insert / Update a File to the intended file storage
         /// </summary>
@@ -163,10 +279,39 @@ namespace Netigent.Utils.FileStoreIO
         /// <param name="mainGroup">(Optional) Used when storing to filesystem will store as \\myserver\filestore\{mainGroup}\{subGroup}\filename.ext</param>
         /// <param name="subGroup">(Optional) Used when storing to filesystem will store as \\myserver\filestore\{mainGroup}\{subGroup}\filename.ext</param>
         /// <returns>A unique file-reference for getting the file, if blank issues creating the file</returns>
-        public string File_Upsert(InternalFileModel fileObject, FileStorageProvider storageType, string mainGroup = "", string subGroup = "")
+        private string File_Upsert(InternalFileModel fileObject, FileStorageProvider storageType, string mainGroup = "", string subGroup = "")
         {
-            //Assign unique fileRef code
-            fileObject.FileRef = FileStore_NewFileRef();
+            // if files exist with same name, extentsion and groups, then consider it the same file,
+            // Its upto the write2file etc to store as versioned
+            var existingFilesList = Files_GetAll(mainGroup, subGroup).Where(x =>
+                x.Extension.Equals(fileObject.Extension, StringComparison.InvariantCultureIgnoreCase) &&
+                x.Name.StartsWith(fileObject.Name, StringComparison.InvariantCultureIgnoreCase));
+
+            // Have we got existing files?
+            if (existingFilesList?.Count() > 0)
+            {
+                fileObject.FileRef = existingFilesList.FirstOrDefault().FileRef;
+
+                int maxFileId = 1;
+                // Figure out highestId
+                foreach (var existingFile in existingFilesList)
+                {
+                    string[] parts = existingFile.Name.Split(new string[] { _versionFlag }, StringSplitOptions.RemoveEmptyEntries);
+                    if (parts.Length > 1)
+                    {
+                        _ = Int32.TryParse(s: parts[1], out int existingMaxId);
+                        maxFileId = existingMaxId + 1;
+                    }
+                }
+
+                // Rewrite with version increment
+                fileObject.Name = $"{fileObject.Name}{_versionFlag}{maxFileId}";
+            }
+            else
+            {
+                //Assign unique fileRef code
+                fileObject.FileRef = FileStore_FindNewFileRef();
+            }
 
             //Determine where the file needs to go
             switch (storageType)
@@ -186,7 +331,9 @@ namespace Netigent.Utils.FileStoreIO
 
                         //Update the model to insert into database tracking table
                         fileObject.FilePath = successfullFullFilePath;
-                        fileObject.Data = null; //Clear so it doesnt write to database also
+
+                        // Since in Non DB mode, ensure it doesn't get wrote to the table
+                        fileObject.Data = null;
                     }
                     catch (Exception ex)
                     {
@@ -200,101 +347,127 @@ namespace Netigent.Utils.FileStoreIO
                     break;
             }
 
-            //Add the fileRecord
+            // Add the fileRecord
+            // Database files will be wrote directly to the filesystemindextable
             long id = _ioClient.FileStore_Upsert(fileObject);
             if (id > 0)
-                return _ioClient.FileStore_GetFileRef(id);
+            {
+                // Ensure the Id was def entered
+                string insertedId = _ioClient.FileStore_GetFileRef(id);
+                if (!string.IsNullOrEmpty(insertedId))
+                {
+                    // Ensure we dont have more versions of the file than permitted.
+                    List<InternalFileModel> fileCopies = _ioClient.FileStore_GetAllByRef(insertedId);
+                    if (fileCopies?.Count > _maxVersions)
+                    {
+                        for (int i = _maxVersions; i < fileCopies.Count; i++)
+                        {
+                            // Prune versions beyond, max copies
+                            var file2Delete = fileCopies[i];
+                            _ = DeleteFile(file2Delete);
+                        }
+                    }
+
+                    // All is right with the world, return inserted id
+                    return insertedId;
+                }
+            }
 
             return string.Empty;
         }
 
-        /// <summary>
-        /// Gets the file by the unique file-reference
-        /// </summary>
-        /// <param name="fileRef">Pass the unique file-reference</param>
-        /// <returns>FileObjectModel</returns>
-        public async Task<FileObjectModel> File_Get(string fileRef)
+        private string GetAbsoluteFilePath(string filePath)
         {
-            //Grab the fileRecord and if stored in database get the binary also
-            var file = _ioClient.FileStore_Get(fileRef);
-            if (file == null) return null;
-
-            //Build file for output
-            FileObjectModel outputFile = new() { FileRef = file.FileRef, ContentType = file.MimeType, Description = file.Description, Name = file.Name + file.Extension };
-
-            switch (file.FileLocation)
+            if (string.IsNullOrEmpty(filePath))
             {
-                case (int)FileStorageProvider.FileSystem:
-                    //Get from filesystem
-                    var memory = new MemoryStream();
-                    using (var stream = new FileStream(file.FilePath, FileMode.Open))
-                    {
-                        await stream.CopyToAsync(memory);
-                    }
-                    memory.Position = 0;
-                    outputFile.Data = memory.ToArray();
-                    break;
-
-
-                case (int)FileStorageProvider.Database:
-                    outputFile.Data = file.Data;
-                    break;
-
-                default:
-                    break;
+                return string.Empty;
             }
 
-            return outputFile;
+            // Is the file absolute location??
+            if (filePath.Contains(_fileFlag)
+            || filePath.Contains(_internetFlag)
+                || filePath.StartsWith(_networkFlag, StringComparison.InvariantCultureIgnoreCase))
+            {
+                return filePath;
+            }
+            // Treat as relative
+            else
+            {
+                return Path.Combine(_fileStoreRoot, filePath);
+            }
         }
 
-        public async Task<InternalFileModel> File_Delete(string fileRef)
+        private bool DeleteFile(InternalFileModel file)
         {
-            InternalFileModel fileInfo = _ioClient.FileStore_GetInfo(fileRef);
-            if (fileInfo?.Id > 0)
+            try
             {
-                switch (fileInfo.FileLocation)
+                if (file.Id > 0)
                 {
-                    case (int)FileStorageProvider.FileSystem:
-                        if (File.Exists(fileInfo.FilePath))
-                            File.Delete(fileInfo.FilePath);
-                        break;
 
-                    default:
-                        break;
+                    switch (file.FileLocation)
+                    {
+                        case (int)FileStorageProvider.FileSystem:
+                            // This will be the true path
+                            string absoluteFilePath = GetAbsoluteFilePath(file.FilePath);
+
+                            if (System.IO.File.Exists(absoluteFilePath))
+                            {
+                                System.IO.File.Delete(absoluteFilePath);
+                            }
+                            break;
+
+                        case (int)FileStorageProvider.Database:
+                            // Do nothing, file will be deleted as on the record itself
+                            break;
+
+                        default:
+                            break;
+                    }
+
+                    _ = _ioClient.FileStore_Delete(file.Id);
                 }
-
-                _ioClient.FileStore_Delete(fileInfo.Id);
+            }
+            catch (Exception)
+            {
+                return false;
             }
 
-            return fileInfo;
+            return true;
         }
-
-        public async Task<List<InternalFileModel>> Files_GetAll() => _ioClient.FileStore_GetAll();
-        public async Task<List<InternalFileModel>> Files_GetByMainGroup(string mainGroup) => _ioClient.FileStore_GetByMainGroup(mainGroup);
-        public async Task<List<InternalFileModel>> Files_GetBySubGroup(string subGroup) => _ioClient.FileStore_GetBySubGroup(subGroup);
-        public async Task<List<InternalFileModel>> Files_GetByMainAndSubGroup(string mainGroup, string subGroup) => _ioClient.FileStore_GetByMainAndSubGroup(mainGroup, subGroup);
 
         private string Write2Filesystem(string fileNameWithExt, byte[] data, string mainGroup = "", string subGroup = "")
         {
             try
             {
-                //Ensure folder exists
-                string fileStorePath = Path.Combine(_fileStoreRoot, mainGroup, subGroup);
-                bool basePathExists = Directory.Exists(fileStorePath);
-                if (!basePathExists) Directory.CreateDirectory(fileStorePath);
+                // Will be stored in db
+                string relativeFolder = Path.Combine(mainGroup, subGroup);
+
+                // Ensure folder exists
+                string absoluteFolder = Path.Combine(_fileStoreRoot, relativeFolder);
+                bool absoluteFolderExists = Directory.Exists(absoluteFolder);
+                if (!absoluteFolderExists)
+                {
+                    Directory.CreateDirectory(absoluteFolder);
+                }
 
                 //Full filepath
-                string fullFilePath = Path.Combine(fileStorePath, fileNameWithExt);
+                string absoluteFile = Path.Combine(absoluteFolder, fileNameWithExt);
+                string relativeFile = Path.Combine(relativeFolder, fileNameWithExt);
 
-                if (File.Exists(fullFilePath))
-                    File.Delete(fullFilePath);
+                // Wipe any blocking files with same name...
+                if (System.IO.File.Exists(absoluteFile))
+                {
+                    System.IO.File.Delete(absoluteFile);
+                }
 
-                using (var stream = new FileStream(fullFilePath, FileMode.Create))
+                // Write 2 Disk
+                using (var stream = new FileStream(absoluteFile, FileMode.Create))
                 {
                     stream.Write(data, 0, data.Length);
                 }
 
-                return fullFilePath;
+                // Relative File will be stored in index
+                return relativeFile;
             }
             catch (Exception ex)
             {
@@ -302,10 +475,10 @@ namespace Netigent.Utils.FileStoreIO
             }
         }
 
-        private string FileStore_NewFileRef()
+        private string FileStore_FindNewFileRef()
         {
+            // No existing files find a new Id
             string generatedFileRef = "";
-
             do
             {
                 generatedFileRef = $"{_filePrefix}{Guid.NewGuid().ToString().Replace("-", string.Empty)}";
@@ -328,12 +501,12 @@ namespace Netigent.Utils.FileStoreIO
                 if (!Directory.Exists(_fileStoreRoot))
                     Directory.CreateDirectory(_fileStoreRoot);
 
-                if (File.Exists(testFile))
-                    File.Delete(testFile);
+                if (System.IO.File.Exists(testFile))
+                    System.IO.File.Delete(testFile);
                 else
                 {
-                    File.CreateText(testFile).Dispose();
-                    File.Delete(testFile);
+                    System.IO.File.CreateText(testFile).Dispose();
+                    System.IO.File.Delete(testFile);
                 }
 
                 FileSystemStorageAvailable = true;
@@ -346,5 +519,6 @@ namespace Netigent.Utils.FileStoreIO
                 return false;
             }
         }
+        #endregion
     }
 }

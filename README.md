@@ -6,6 +6,14 @@ Initially thanks for considering using this library - we hope that it gives you 
 In terms of using the Library the following should get you up and running quickly
 
 # Version Changes
+**1.0.6** Versioning, if you via Constructor increment maxVersions the app will store that many latest copies, if you push same file+ext in the same mainGroup, subGroup, it considers same file and will return same fileRef keeping X last versions.
+
+**1.0.5** Upgraded to .net 6 LTS
+
+**1.0.4** Stablity improvements.
+
+**1.0.3** Stablity improvements.
+
 **1.0.2** 'Customer' has been relabelled to 'MainGroup', and 'FileTypeGroup' relabelled to 'SubGroup' for clarity and added functionality to access those. 'FileType' is also now known as 'MimeType' to reflect the data stored.
 
 ***Database*** If you can best to delete the table [FileStoreIndex] and allow recreation, but you dont have too. The Client will auto upgrade your database, you can then manually remove column [FileType] from [FileStoreIndex] if you want - its no longer used!
@@ -17,10 +25,10 @@ In terms of using the Library the following should get you up and running quickl
 ```
 
 ## Direct Usage
-You can use the client directly as follows
+You can use the client directly as follows, keeping Last 3 versions of the file
 
 ```
-	IFileStoreIOClient fileStoreIOClient = new FileStoreIOClient("mysqlserver connection string", "c:\\temp\\files\\", "dbo");
+	IFileStoreIOClient fileStoreIOClient = new FileStoreIOClient("mysqlserver connection string", "c:\\temp\\files\\", "dbo", 3);
 	var newFile = fileStoreIOClient.File_Get("_$23fe627c5a5b410aa6017db308b71077");
 ```
 
@@ -29,13 +37,16 @@ The below method steps you through using IServiceCollection registration and inj
 
 ### FileStoreIOClient settings in **appSettings.json**
 
+Define via appSettings, keeping last 5 versions of file.
+
 ```
 "FileStoreIO": {
     "Database": "mysqlserver connection string",
     "FileStoreRoot": "c:\\temp\\files\\",
     "FilePrefix": "_$",
     "DatabaseSchema": "filestore",
-    "StoreFileAsUniqueRef":  true
+    "StoreFileAsUniqueRef":  true,
+	"MaxVersions": 5
   }
 ```
   
@@ -106,8 +117,8 @@ namespace Netigent.Examples.UploadApp.Controllers
 
 		public async Task<IActionResult> DeleteFile(string id)
 		{
-			var fileInfo = await _ioClient.File_Delete(id);
-			TempData["Message"] = $"Removed {fileInfo.Name} successfully from File System.";
+			var xyz = await something();
+			var fileInfo = _ioClient.File_Delete(id);
 			return RedirectToAction("Index");
 		}
 	}

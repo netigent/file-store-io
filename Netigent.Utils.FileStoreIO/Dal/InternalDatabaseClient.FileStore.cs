@@ -7,62 +7,17 @@ namespace Netigent.Utils.FileStoreIO.Dal
 	public partial class InternalDatabaseClient
 	{
 		/// <summary>
-		/// Get All as List<FileStore>
-		/// </summary>
-		// <returns>List<FileStore></returns>
-		internal List<InternalFileModel> FileStore_GetAll()
-		{
-			string queryDef = $@"SELECT [Created], [Description], [Extension], [FileRef], [MimeType], [Id], [Modified], [Name], [UploadedBy], [FileLocation], [MainGroup], [SubGroup]
-										FROM [{_schemaName}].[FileStoreIndex]";
-
-			return RunQueryToList<InternalFileModel>(queryDef, null);
-		}
-
-		/// <summary>
-		/// Get By MainGroup as List<FileStore>
-		/// </summary>
-		/// <param name="mainGroup">Main-Group-Code / Customer / Record  e.g. customer-1 / record-1</param>
-		/// <returns></returns>
-		internal List<InternalFileModel> FileStore_GetByMainGroup(string mainGroup)
-		{
-			string queryDef = $@"SELECT [Created], [Description], [Extension], [FileRef], [MimeType], [Id], [Modified], [Name], [UploadedBy], [FileLocation], [MainGroup], [SubGroup]
-										FROM [{_schemaName}].[FileStoreIndex]
-										WHERE [MainGroup] = @MainGroup";
-
-			var queryParms = new DynamicParameters();
-			queryParms.Add("@MainGroup", mainGroup);
-
-			return RunQueryToList<InternalFileModel>(queryDef, queryParms);
-		}
-
-		/// <summary>
-		/// Get By SubGroup as List<FileStore>
-		/// </summary>
-		/// <param name="subGroup">Sub-Group-Code / File-Group / File-Area e.g. profile-pics</param>
-		/// <returns></returns>
-		internal List<InternalFileModel> FileStore_GetBySubGroup(string subGroup)
-		{
-			string queryDef = $@"SELECT [Created], [Description], [Extension], [FileRef], [MimeType], [Id], [Modified], [Name], [UploadedBy], [FileLocation], [MainGroup], [SubGroup]
-										FROM [{_schemaName}].[FileStoreIndex]
-										WHERE [SubGroup] = @SubGroup";
-
-			var queryParms = new DynamicParameters();
-			queryParms.Add("@SubGroup", subGroup);
-
-			return RunQueryToList<InternalFileModel>(queryDef, queryParms);
-		}
-
-		/// <summary>
 		/// Get By MainGroup and SubGroup as List<FileStore>
 		/// </summary>
 		/// <param name="mainGroup">Main-Group-Code / Customer / Record  e.g. customer-1 / record-1</param>
 		/// <param name="subGroup">Sub-Group-Code / File-Group / File-Area e.g. profile-pics</param>
 		/// <returns></returns>
-		internal List<InternalFileModel> FileStore_GetByMainAndSubGroup(string mainGroup, string subGroup)
+		internal List<InternalFileModel> FileStore_GetAllByLocation(string mainGroup = "", string subGroup = "")
 		{
+			// WARNING: Never getdata from here, file could be stored in DB, will kill performancc
 			string queryDef = $@"SELECT [Created], [Description], [Extension], [FileRef], [MimeType], [Id], [Modified], [Name], [UploadedBy], [FileLocation], [MainGroup], [SubGroup]
 										FROM [{_schemaName}].[FileStoreIndex]
-										WHERE [MainGroup] = @MainGroup AND [SubGroup] = @SubGroup";
+										WHERE IsNull([MainGroup],'') = @MainGroup AND IsNull([SubGroup],'') = @SubGroup";
 
 			var queryParms = new DynamicParameters();
 			queryParms.Add("@MainGroup", mainGroup);
@@ -71,21 +26,25 @@ namespace Netigent.Utils.FileStoreIO.Dal
 			return RunQueryToList<InternalFileModel>(queryDef, queryParms);
 		}
 
-		/// Get FileStore Object
-		/// </summary>
-		/// <param name="id">FileStore.Id</param>
-		/// <returns>FileStore Object</returns>
-		internal InternalFileModel FileStore_Get(string fileRef)
-		{
-			string queryDef = $@"SELECT TOP 1 [Created], [Data], [Description], [Extension], [FilePath], [FileRef], [MimeType], [Id], [Modified], [Name], [UploadedBy], [FileLocation], [MainGroup], [SubGroup]
+        /// <summary>
+        /// Get By MainGroup and SubGroup as List<FileStore>
+        /// </summary>
+        /// <param name="mainGroup">Main-Group-Code / Customer / Record  e.g. customer-1 / record-1</param>
+        /// <param name="subGroup">Sub-Group-Code / File-Group / File-Area e.g. profile-pics</param>
+        /// <returns></returns>
+        internal List<InternalFileModel> FileStore_GetAllByRef(string fileRef)
+        {
+            // WARNING: Never getdata from here, file could be stored in DB, will kill performancc
+            string queryDef = $@"SELECT [Created], [Data], [Description], [Extension], [FilePath], [FileRef], [MimeType], [Id], [Modified], [Name], [UploadedBy], [FileLocation], [MainGroup], [SubGroup]
 											  FROM [{_schemaName}].[FileStoreIndex]
-											  WHERE [FileRef] = @FileRef";
+											  WHERE [FileRef] = @FileRef
+											  ORDER BY Id Desc";
 
-			var queryParms = new DynamicParameters();
-			queryParms.Add("@FileRef", fileRef);
+            var queryParms = new DynamicParameters();
+            queryParms.Add("@FileRef", fileRef);
 
-			return RunQuery<InternalFileModel>(queryDef, queryParms);
-		}
+            return RunQueryToList<InternalFileModel>(queryDef, queryParms);
+        }
 
 		/// Get FileStore Object
 		/// </summary>
@@ -108,7 +67,7 @@ namespace Netigent.Utils.FileStoreIO.Dal
 		/// </summary>
 		/// <param name="id">FileStore.Id</param>
 		/// <returns>FileStore Object</returns>
-		private InternalFileModel FileStore_Get(long id)
+		internal InternalFileModel FileStore_Get(long id)
 		{
 				string queryDef = $@"SELECT [Created], [Data], [Description], [Extension], [FilePath], [FileRef], [MimeType], [Id], [Modified], [Name], [UploadedBy], [FileLocation], [MainGroup], [SubGroup]
 										  FROM [{_schemaName}].[FileStoreIndex]

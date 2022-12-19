@@ -1,4 +1,6 @@
-﻿namespace Netigent.Utils.FileStoreIO.Models
+﻿using Netigent.Utils.FileStoreIO.Enum;
+
+namespace Netigent.Utils.FileStoreIO.Models
 {
 	public class FileStoreIOConfig
     {
@@ -8,5 +10,6 @@
         public string FilePrefix { get; set; }
         public string DatabaseSchema { get; set; }
         public bool StoreFileAsUniqueRef { get; set; } = true;
+        public int MaxVersions { get; set; } = 1;
     }
 }
