@@ -17,7 +17,8 @@ namespace Netigent.Utils.FileStoreIO.Dal
 			// WARNING: Never getdata from here, file could be stored in DB, will kill performancc
 			string queryDef = $@"SELECT [Created], [Description], [Extension], [FileRef], [MimeType], [Id], [Modified], [Name], [UploadedBy], [FileLocation], [MainGroup], [SubGroup]
 										FROM [{_schemaName}].[FileStoreIndex]
-										WHERE IsNull([MainGroup],'') = @MainGroup AND IsNull([SubGroup],'') = @SubGroup";
+										WHERE (@MainGroup = '' OR IsNull([MainGroup],'') = @MainGroup)
+										AND (@SubGroup = '' OR IsNull([SubGroup],'') = @SubGroup)";
 
 			var queryParms = new DynamicParameters();
 			queryParms.Add("@MainGroup", mainGroup);
