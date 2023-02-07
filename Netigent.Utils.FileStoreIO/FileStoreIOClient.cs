@@ -1,5 +1,6 @@
 ﻿using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Options;
+using Netigent.Utils.FileStoreIO.Clients;
 using Netigent.Utils.FileStoreIO.Dal;
 using Netigent.Utils.FileStoreIO.Enum;
 using Netigent.Utils.FileStoreIO.Helpers;
@@ -26,6 +27,7 @@ namespace Netigent.Utils.FileStoreIO
         private readonly string _filePrefix;
         private readonly bool _useUniqueName;
         private readonly int _maxVersions;
+        private readonly BoxConfig? _boxConfig;
 
         private const string _notSpecifiedFlag = "_$";
         private const string _versionFlag = "__ver_";
@@ -47,6 +49,8 @@ namespace Netigent.Utils.FileStoreIO
             _filePrefix = fileIOConfig.Value.FilePrefix ?? _notSpecifiedFlag;
             _useUniqueName = fileIOConfig.Value.StoreFileAsUniqueRef;
             _maxVersions = fileIOConfig.Value.MaxVersions > 1 ? fileIOConfig.Value.MaxVersions : 1;
+
+            _boxConfig = fileIOConfig.Value.Box;
 
             Startup(out string fileSystemErrorMessage);
 
@@ -78,8 +82,8 @@ namespace Netigent.Utils.FileStoreIO
             string dbSchema = _notSpecifiedSchema,
             bool useUniqueRef = true,
             int maxVersions = 1,
-            FileStorageProvider defaultFileStore = FileStorageProvider.Database
-            )
+            FileStorageProvider defaultFileStore = FileStorageProvider.Database,
+            BoxConfig? boxConfig = null)
         {
             //Create the filestore client
             _ioClient = new InternalDatabaseClient(databaseConnection, dbSchema);
@@ -87,6 +91,8 @@ namespace Netigent.Utils.FileStoreIO
             _filePrefix = filePrefix;
             _useUniqueName = useUniqueRef;
             _maxVersions = maxVersions > 1 ? maxVersions : 1;
+
+            _boxConfig = boxConfig;
 
             Startup(out string fileSystemErrorMessage);
 
@@ -342,6 +348,22 @@ namespace Netigent.Utils.FileStoreIO
 
                     break;
                 case FileStorageProvider.Database:
+                    break;
+
+                case FileStorageProvider.Box:
+                    try
+                    {
+                        BoxClient box = new BoxClient(_boxConfig);
+                        BoxResult result = box.GetContents<BoxResult>(mainGroup);
+
+                        var reuslt = box.UploadAsync(0, fileObject).Result;
+
+                        fileObject.FileRef = $"{_filePrefix}{reuslt}";
+                    }
+                    catch (Exception e)
+                    {
+                        throw e;
+                    }
                     break;
                 default:
                     break;

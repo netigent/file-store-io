@@ -3,6 +3,7 @@
 	public enum FileStorageProvider
 	{
 		FileSystem,
-		Database
+		Database,
+		Box
 	}
 }
