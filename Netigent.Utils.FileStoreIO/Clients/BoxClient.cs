@@ -12,22 +12,42 @@ using System.Net.Http;
 using System.Security.Claims;
 using System.Net.Http.Headers;
 using System.Threading.Tasks;
-using Org.BouncyCastle.Asn1.Cms;
-using System.Xml.Linq;
 using System.Text;
 using System.Linq;
+using Netigent.Utils.FileStoreIO.Enum;
+using System.Net;
 
 namespace Netigent.Utils.FileStoreIO.Clients
 {
     public class BoxClient : IClient
     {
+        #region Internal Props
         private const string ApiUrl = "https://api.box.com/2.0";
         private const string UploadUrl = "https://upload.box.com/api/2.0/files";
+        private readonly BoxConfig _config;
+        private readonly RSA _rsa;
         private string access_token { get; set; }
-        private HttpClient _client { get; }
+        private HttpClient _boxClient { get; }
+        private DateTime _expiration { get; set; }
+        private long _rootFolder { get; }
+        private int _maxVersions { get; }
+        #endregion
 
-        public BoxClient(BoxConfig config)
+        #region Public Props
+        public bool IsReady { get; set; } = false;
+        #endregion
+
+        #region ctor
+        public BoxClient(BoxConfig config, int maxVersions = 1)
         {
+            // Set the RootFolder we're targeting, if less than 0 or not set etc, the root is box deault root
+            _rootFolder = config.RootFolder >= 0
+                ? config.RootFolder
+                : 0;
+
+            _maxVersions = maxVersions >= 1
+                ? maxVersions
+                : 1;
 
             // Next, we use BouncyCastle's PemReader to read the 
             // decrypt the private key into a RsaPrivateCrtKeyParameters
@@ -39,87 +59,17 @@ namespace Netigent.Utils.FileStoreIO.Clients
             var keyParams = (RsaPrivateCrtKeyParameters)pemReader.ReadObject();
 
             // In the end, we will use this key in the next steps
-            var key = CreateRSAProvider(ToRSAParameters(keyParams));
-
-            // We create a random identifier that helps protect against
-            // replay attacks
-            byte[] randomNumber = new byte[64];
-            RandomNumberGenerator.Create().GetBytes(randomNumber);
-            var jti = Convert.ToBase64String(randomNumber);
-
-            // We give the assertion a lifetime of 45 seconds 
-            // before it expires
-            DateTime expirationTime = DateTime.UtcNow.AddSeconds(45);
-
-            // Next, we are read to assemble the payload
-            var claims = new List<Claim>{
-                new Claim("sub", config.EnterpriseID),
-                new Claim("box_sub_type", "enterprise"),
-                new Claim("jti", jti),
-            };
-
-            String authenticationUrl = "https://api.box.com/oauth2/token";
-
-            // Rather than constructing the JWT assertion manually, we are 
-            // using the System.IdentityModel.Tokens.Jwt library.
-            var payload = new JwtPayload(
-                config.BoxAppSettings.ClientID,
-                authenticationUrl,
-                claims,
-                null,
-                expirationTime
-            );
-
-            // The API support "RS256", "RS384", and "RS512" encryption
-            var credentials = new SigningCredentials(
-                new RsaSecurityKey(key),
-                SecurityAlgorithms.RsaSha512
-            );
-            var header = new JwtHeader(signingCredentials: credentials);
-
-            // Finally, let's create the assertion usign the 
-            // header and payload
-            var jst = new JwtSecurityToken(header, payload);
-            var tokenHandler = new JwtSecurityTokenHandler();
-            string assertion = tokenHandler.WriteToken(jst);
-
-            // We start by preparing the params to send to 
-            // the authentication endpoint
-            var content = new FormUrlEncodedContent(new[]
-            {
-                // This specifies that we are using a JWT assertion
-                // to authenticate
-                new KeyValuePair<string, string>(
-                    "grant_type", "urn:ietf:params:oauth:grant-type:jwt-bearer"),
-                // Our JWT assertion
-                new KeyValuePair<string, string>(
-                    "assertion", assertion),
-                // The OAuth 2 client ID and secret
-                new KeyValuePair<string, string>(
-                    "client_id", config.BoxAppSettings.ClientID),
-                new KeyValuePair<string, string>(
-                    "client_secret", config.BoxAppSettings.ClientSecret)
-            });
+            _rsa = CreateRSAProvider(ToRSAParameters(keyParams));
+            this._config = config;
 
             // Make the POST call to the authentication endpoint
-            _client = new HttpClient();
-            var response = _client.PostAsync(authenticationUrl, content).Result;
+            _boxClient = new HttpClient();
+            _boxClient.Timeout = new TimeSpan(0, _config.TimeoutInMins, 0);
 
-            var data = response.Content.ReadAsStringAsync().Result;
-            Token? token = JsonConvert.DeserializeObject<Token>(data);
-            if (token != null)
-            {
-                access_token = token.access_token;
-                _client.DefaultRequestHeaders.Add(
-                "Authorization", "Bearer " + access_token
-
-            );
-
-                return;
-            }
-
-            throw new Exception("Couldnt establish client");
+            // _ = RefreshToken().Result;
+            //return;
         }
+        #endregion
 
         public RSA CreateRSAProvider(RSAParameters rp)
         {
@@ -154,158 +104,556 @@ namespace Netigent.Utils.FileStoreIO.Clients
             return padded;
         }
 
-        public T GetContents<T>(string path = "0")
+        private long AsLong(string folderId)
         {
-            // https://developer.box.com/guides/authentication/jwt/without-sdk/
-            HttpResponseMessage response = _client.GetAsync($"{ApiUrl}/folders/{path}").Result;
-            string data = response.Content.ReadAsStringAsync().Result;
-
             try
             {
-                var returnOutput = JsonConvert.DeserializeObject<T>(data);
-                return returnOutput;
+                return long.Parse(folderId);
             }
             catch
             {
+                return -1;
             }
-
-            return default;
         }
 
-        public async Task<long> UploadAsync(long location, InternalFileModel fileModel)
+        public async Task<BoxEntry> GetFolderAsync(long folderId)
         {
-            string endpoint = $"{UploadUrl}/content";
+            string requestUrl = $"{ApiUrl}/folders/{folderId}";
+            var response = await GetAsync<BoxEntry>(requestUrl);
 
-            var fileContent = new ByteArrayContent(fileModel.Data);
-            //fileContent.Headers.ContentDisposition = new ContentDispositionHeaderValue("form-data")
-            //{
-            //    Name = fileModel.Name,
-            //    FileName = fileModel.Name
-            //};
-            fileContent.Headers.ContentType = new MediaTypeHeaderValue("multipart/form-data");
+            return response;
+        }
 
-            using (var formData = new MultipartFormDataContent())
+        public async Task<List<BoxEntry>> GetSubItemsListAsync(long folderId, int offSet = 0, int pageSize = 1000, BoxItemType itemType = BoxItemType.All)
+        {
+            List<BoxEntry> items = new();
+
+            // 1 - 1000
+            int itemsLimit = pageSize > 1000
+                    ? 1000
+                    : pageSize < 1
+                        ? 1
+                        : pageSize;
+
+            string qs = $"limit={itemsLimit}&offset={offSet}";
+            string requestUrl = $"{ApiUrl}/folders/{folderId}/items?{qs}";
+
+            var response = await GetAsync<BoxPagedCollectionResult>(requestUrl);
+
+            // Add this batch and do we need to go to next page?
+            items.AddRange(response.Entries.Where(x => itemType == BoxItemType.All || x.Type.Equals(itemType.ToString(), StringComparison.InvariantCultureIgnoreCase)));
+            if (response.TotalCount > itemsLimit && response.TotalCount > (response.Limit + response.Offset))
             {
-                var att = new
+                int nextOffset = (response.Limit + response.Offset);
+                items.AddRange(await GetSubItemsListAsync(folderId, nextOffset, itemsLimit, itemType));
+            }
+
+            return items;
+        }
+
+        private async Task<BoxEntry> CreateFolder(string folderName, long parentId)
+        {
+            string requestUrl = $"{ApiUrl}/folders";
+            string boxAttribute = BoxAttribute(folderName, parentId);
+
+            var result = await PostContentAsync(requestUrl, boxAttribute, null);
+            if (result.IsSuccess)
+            {
+                return result.Result;
+            }
+
+            throw new Exception(result.Message);
+        }
+
+        private async Task<long> ResolveId(string folderName, long parentId = -1, bool autoCreate = true)
+        {
+            long targetBoxId = -1;
+            long parentBoxId = parentId >= 0 ? parentId : _rootFolder;
+
+            if (string.IsNullOrEmpty(folderName))
+            {
+                return parentBoxId;
+            }
+            else
+            {
+                // Get List of FolderNames from Box
+                var foldersList = await GetSubItemsListAsync(folderId: parentBoxId, itemType: BoxItemType.Folder);
+
+                // Find Folder matching name
+                BoxEntry? subFolder = foldersList.FirstOrDefault(x => x.Name.Equals(folderName, StringComparison.InvariantCultureIgnoreCase));
+                if (subFolder == null || subFolder == default)
                 {
-                    name = fileModel.Name,
-                    parent = new
+                    // Ask box to create the folder
+                    if (autoCreate)
                     {
-                        id = location
+                        subFolder = await CreateFolder(folderName, parentBoxId);
+                        targetBoxId = -2;
                     }
-                };
-
-                var jsonContent = new StringContent(JsonConvert.SerializeObject(att), Encoding.UTF8, "application/json");
-                formData.Add(jsonContent, "attributes");
-                formData.Add(fileContent, "file", fileModel.Name);
-
-
-                var response = await _client.PostAsync(UploadUrl, formData);
-                string data = response.Content.ReadAsStringAsync().Result;
-
-                if (response.IsSuccessStatusCode)
-                {
-                    PathCollectionResult? result = JsonConvert.DeserializeObject<PathCollectionResult>(data);
                 }
-                else if (response.StatusCode == System.Net.HttpStatusCode.Conflict)
+
+                targetBoxId = AsLong(subFolder.Id);
+            }
+
+            return targetBoxId;
+        }
+
+        public async Task<string> SaveFileAsync(InternalFileModel fileModel)
+        {
+            if (fileModel.Data?.Length == null)
+            {
+                // Nothing to upload
+                return string.Empty;
+            }
+
+            long folderId = await ResolveId(fileModel.SubGroup, await ResolveId(fileModel.MainGroup, _rootFolder));
+            string endpoint = $"{UploadUrl}/content";
+            string boxAttribute = BoxAttribute(fileModel.RawName + fileModel.Extension, folderId);
+
+            // Check for conflicts i.e. file already exists
+            BoxApiResult uploadResult = await UploadPreflightAsync(boxAttribute);
+            BoxRef boxRef = new BoxRef(uploadResult.Result);
+
+            if (uploadResult.IsSuccess)
+            {
+                uploadResult = await PostContentAsync(endpoint, boxAttribute, fileModel);
+                if (uploadResult.IsSuccess)
                 {
-                    ConflictResult? conflict = JsonConvert.DeserializeObject<ConflictResult>(data);
+                    boxRef = new BoxRef(uploadResult.Result);
+                    return boxRef.AsFilePath;
                 }
             }
-            return 0;
+
+
+            if (!uploadResult.IsSuccess && _maxVersions > 1)
+            {
+                return await UploadNewVersionAsync(fileModel, uploadResult.Result.Id, folderId);
+                //var versionHistory = await GetFileInfo(uploadResult.Result.Id, true);
+
+                //if (versionHistory.Count() > _maxVersions)
+                //{
+                //    var versions2Remove = versionHistory.OrderBy( x=> x.SequenceId).Take(versionHistory.Count() - _maxVersions).ToList();
+                //    foreach(var version in versions2Remove)
+                //    {
+                //        var removeVersion = new BoxRef(version);
+                //        _ = await DeleteFileAsync(removeVersion.AsFilePath);
+                //    }
+
+                //}
+
+                //return uploadedVersionResult;
+            }
+            else
+            {
+                // Delete existing file and upload a new one
+                // Versions arent maintained / dont have premium, replace existing version
+
+                // Delete blocking file and retry operation
+                // Passing only boxId as no version will remove all copies
+                _ = await DeleteFileAsync(boxRef.BoxId.ToString());
+                return await SaveFileAsync(fileModel);
+            }
         }
 
-        private Task<long> UploadVersionAsync(string location, string existingfileId, InternalFileModel fileModel)
+
+
+        private async Task<string> UploadNewVersionAsync(InternalFileModel fileModel, string existingFileId, long folderId)
         {
-            string endpoint = $"{UploadUrl}/{existingfileId}/content";
+            string endpoint = $"{UploadUrl}/{existingFileId}/content";
+            string boxAttribute = BoxAttribute(fileModel.RawName + fileModel.Extension, folderId);
 
+            var result = await PostContentAsync(endpoint, boxAttribute, fileModel);
+
+            if (result.IsSuccess)
+            {
+                return $"{result.Result?.Id}/{result.Result?.FileVersion?.Id}";
+            }
+
+            throw new Exception(result.Message);
         }
 
-        private string BoxAttribute(string fileName, string folderId)
+        private string BoxAttribute(string fileName, long folderId)
         {
             var boxAttribute = new
             {
                 name = fileName,
                 parent = new
                 {
-                    id = folderId
+                    id = folderId.ToString()
                 }
             };
 
             return JsonConvert.SerializeObject(boxAttribute);
         }
 
-        private async Task<ApiResult> UploadContentAsync(string url, string boxAttribute, string? fileName, byte[]? content)
+        public async Task<BoxEntry[]> GetFileInfo(string fileId, bool includePreviousVersions = false)
+        {
+            string getFileInfoEndpoint = $"{ApiUrl}/files/{fileId}";
+            var fileInfoResult = await GetAsync<BoxResult>(getFileInfoEndpoint);
+
+            List<BoxEntry> fileCollectionResult = new();
+
+            if (fileInfoResult != null)
+            {
+                int maxSeq = Convert.ToInt32(fileInfoResult.SequenceId);
+
+                fileCollectionResult.Add(new BoxEntry
+                {
+                    Id = fileId,
+                    SequenceId = maxSeq,
+                    FileVersion = fileInfoResult.FileVersion,
+                    CreatedDt = fileInfoResult.CreatedDt,
+                    Name = fileInfoResult.Name,
+                    Sha1 = fileInfoResult.Sha1,
+                    Size = fileInfoResult.Size,
+                    Description = fileInfoResult.Description,
+                    Etag = fileInfoResult.Etag,
+                    ModifiedDt = fileInfoResult.ModifiedDt,
+                    Type = fileInfoResult.Type,
+                });
+
+                if (includePreviousVersions)
+                {
+                    // Get History of file
+                    // Doesnt include current version
+                    // Feature only available in Premium
+                    string getFilePrevVersionsUrl = $"{ApiUrl}/files/{fileId}/versions";
+                    var prevVersionsResult = await GetAsync<BoxCollectionResult>(getFilePrevVersionsUrl);
+
+                    if (prevVersionsResult?.Entries?.Length > 0)
+                    {
+                        // Should be this way but lets ensure it
+                        List<BoxEntry> prevVersions = prevVersionsResult.Entries.OrderByDescending(x => x.Id).ToList();
+
+                        foreach (var pvItem in prevVersions)
+                        {
+                            maxSeq--;
+                            fileCollectionResult.Add(new BoxEntry
+                            {
+                                Id = fileId,
+                                SequenceId = maxSeq,
+                                FileVersion = new BoxEntryVersion { Id = pvItem.Id, Sha1 = pvItem.Sha1, Type = pvItem.Type },
+                                CreatedDt = pvItem.CreatedDt,
+                                Name = pvItem.Name,
+                                Sha1 = pvItem.Sha1,
+                                Size = pvItem.Size,
+                                Description = pvItem.Description,
+                                Etag = pvItem.Etag,
+                                ModifiedDt = pvItem.ModifiedDt,
+                                Type = pvItem.Type,
+                            });
+                        }
+
+                    }
+                }
+            }
+
+            // Return file Collection result
+            return fileCollectionResult.ToArray();
+        }
+
+
+
+
+
+        private async Task<BoxApiResult> UploadPreflightAsync(string boxAttribute)
+        {
+            _ = await PreflightChecks();
+            // Buidl the ContentPart
+            HttpContent httpContent = new StringContent(boxAttribute, Encoding.UTF8, "application/json");
+            HttpRequestMessage httpRequestMessage = new HttpRequestMessage(HttpMethod.Options, "https://api.box.com/2.0/files/content");
+            httpRequestMessage.Content = httpContent;
+
+            HttpResponseMessage httpResponse = await _boxClient.SendAsync(httpRequestMessage);
+
+            // Read the response body
+            string data = await httpResponse.Content.ReadAsStringAsync();
+            BoxEntry? entry = (JsonConvert.DeserializeObject<BoxConflictResult>(data))?.ContextInfo?.conflicts;
+            return new BoxApiResult
+            {
+                IsSuccess = httpResponse.IsSuccessStatusCode,
+                StatusCode = (int)httpResponse.StatusCode,
+                Message = data,
+                Result = entry,
+            };
+        }
+
+   
+
+
+
+        public async Task<InternalFileModel> GetFileAsync(string filePath)
+        {
+            var boxRef = new BoxRef(filePath);
+
+            //TODO: Need to follow this
+            // https://developer.box.com/reference/get-files-id-content/
+            // handle 202 / 302 and retry-after
+
+            string url = $"https://api.box.com/2.0/files/{boxRef.BoxId}/content{(boxRef.FileVersionId >= 0 ? $"?version={boxRef.FileVersionId}" : string.Empty)}";
+            var result = await GetAsync<InternalFileModel>(url);
+
+            return result;
+        }
+
+        public async Task<bool> DeleteFileAsync(string filePath)
+        {
+            var boxRef = new BoxRef(filePath);
+            string url = $"https://api.box.com/2.0/files/{boxRef.BoxId}{(boxRef.FileVersionId >= 0 ? $"/versions/{boxRef.FileVersionId}" : string.Empty)}";
+
+
+            return (await DeleteAsync(url)).IsSuccessStatusCode;
+        }
+
+        #region Internal Functions
+
+        private async Task<T> GetAsync<T>(string url)
         {
             try
             {
-                // Build the message
-                using (var formData = new MultipartFormDataContent())
+                if (await PreflightChecks())
                 {
-                    // Add the box attributes
-                    formData.Add(new StringContent(boxAttribute, Encoding.UTF8, "application/json"), "attributes");
+                    HttpResponseMessage httpResponse = await _boxClient.GetAsync(url);
 
-                    // Add the fileContent if any
-                    if (content != null && !string.IsNullOrEmpty(fileName) && content?.LongLength > 0)
+                    if (httpResponse.IsSuccessStatusCode)
                     {
-                        formData.Add(new ByteArrayContent(content), "file", fileName);
+                        if (typeof(T) == typeof(InternalFileModel) && httpResponse.Content.Headers?.ContentDisposition?.DispositionType == "attachment")
+                        {
+                            FileInfo fileInfo = new FileInfo(httpResponse.Content.Headers.ContentDisposition.FileName);
+
+                            byte[] data = await httpResponse.Content.ReadAsByteArrayAsync();
+                            return (T)Convert.ChangeType(new InternalFileModel
+                            {
+                                Data = data,
+                                Name = fileInfo.Name,
+                                Extension = fileInfo.Extension,
+                                MimeType = httpResponse.Content.Headers.ContentType.MediaType,
+                            }, typeof(T));
+                        }
+
+                        // We'll try and cast it to a Type
+                        string bodyMessage = await httpResponse.Content.ReadAsStringAsync();
+                        if (!string.IsNullOrEmpty(bodyMessage))
+                        {
+                            return JsonConvert.DeserializeObject<T>(bodyMessage);
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                throw;
+            }
+
+            return default;
+        }
+
+        private async Task<HttpResponseMessage> DeleteAsync(string url)
+        {
+            try
+            {
+                if (await PreflightChecks())
+                {
+                    return await _boxClient.DeleteAsync(url);
+                }
+                else
+                {
+                    throw new Exception("Preflight failure");
+                }
+            }
+            catch (Exception ex)
+            {
+                throw;
+            }
+
+        }
+
+        private async Task<BoxApiResult> PostContentAsync(string url, string boxAttribute, InternalFileModel fileModel)
+        {
+            try
+            {
+                if (await PreflightChecks())
+                {
+                    // Buidl the ContentPart
+                    HttpContent httpContent = new StringContent(boxAttribute, Encoding.UTF8, "application/json");
+                    HttpResponseMessage httpResponse;
+
+                    // Build the message
+                    if (fileModel != null)
+                    {
+                        // Sending FormData Content
+                        using (var formData = new MultipartFormDataContent())
+                        {
+                            // Add the box attributes
+                            formData.Add(httpContent, "attributes");
+
+                            // Add the fileContent if any
+                            if (fileModel?.Data?.Length > 0 && !string.IsNullOrEmpty(fileModel.RawName))
+                            {
+                                var fileContent = new ByteArrayContent(fileModel.Data);
+                                fileContent.Headers.ContentDisposition = new ContentDispositionHeaderValue("form-data")
+                                {
+                                    Name = fileModel.RawName,
+                                    FileName = fileModel.RawName + fileModel.Extension
+                                };
+                                fileContent.Headers.ContentType = new MediaTypeHeaderValue("multipart/form-data");
+
+                                formData.Add(fileContent, "file", fileModel.Extension);
+                            }
+
+                            // Send
+                            httpResponse = await _boxClient.PostAsync(url, formData);
+                        }
+                    }
+                    else
+                    {
+                        // Send
+                        httpResponse = await _boxClient.PostAsync(url, httpContent);
                     }
 
-                    // Set content Type
-                    formData.Headers.ContentType = new MediaTypeHeaderValue("multipart/form-data");
+                    // Read the response body
+                    string data = await httpResponse.Content.ReadAsStringAsync();
 
-                    // Send
-                    var response = await _client.PostAsync(url, formData);
-                    string data = await response.Content.ReadAsStringAsync();
-
-                    return new ApiResult
+                    return new BoxApiResult
                     {
-                        IsSuccess = response.IsSuccessStatusCode,
-                        StatusCode = (int)response.StatusCode,
+                        IsSuccess = httpResponse.IsSuccessStatusCode,
+                        StatusCode = (int)httpResponse.StatusCode,
                         Message = data,
-                        Result = (JsonConvert.DeserializeObject<PathCollectionResult>(data))?.Entries.FirstOrDefault(),
+                        Result = httpResponse.IsSuccessStatusCode
+                        ? ParseBoxEntry(data)
+                        : httpResponse.StatusCode == System.Net.HttpStatusCode.Conflict
+                            ? (JsonConvert.DeserializeObject<BoxConflictResult>(data))?.ContextInfo.conflicts
+                            : null
                     };
                 }
             }
             catch (Exception ex)
             {
-                return new ApiResult
+                return new BoxApiResult
                 {
                     IsSuccess = false,
-                    StatusCode = 400,
+                    StatusCode = 500,
                     Message = ex.Message
                 };
             }
+
+            return default;
         }
 
-
-
-        public Task<InternalFileModel> DownloadAsync(long fileId)
+        private async Task<bool> PreflightChecks()
         {
-            throw new NotImplementedException();
+            // AccessToken empty or TimeExpired?
+            if (string.IsNullOrEmpty(access_token) || DateTime.UtcNow >= _expiration)
+            {
+                return await RefreshToken();
+            }
+
+            return true;
         }
-    }
 
-    class ApiResult
-    {
-        public bool IsSuccess { get; set; }
-        public int StatusCode { get; set; }
+        private async Task<bool> RefreshToken()
+        {
+            // We create a random identifier that helps protect against
+            // replay attacks
+            byte[] randomNumber = new byte[64];
+            RandomNumberGenerator.Create().GetBytes(randomNumber);
+            var jti = Convert.ToBase64String(randomNumber);
 
-        public string Message { get; set; }
+            // We give the assertion a lifetime of 45 seconds 
+            // before it expires
+            DateTime expirationTime = DateTime.UtcNow.AddSeconds(45);
 
-        public BoxEntry? Result { get; set; }
-    }
+            // Next, we are read to assemble the payload
+            var claims = new List<Claim>{
+                new Claim("sub", _config.EnterpriseID),
+                new Claim("box_sub_type", "enterprise"),
+                new Claim("jti", jti),
+            };
+
+            String authenticationUrl = "https://api.box.com/oauth2/token";
+
+            // Rather than constructing the JWT assertion manually, we are 
+            // using the System.IdentityModel.Tokens.Jwt library.
+            var payload = new JwtPayload(
+                _config.BoxAppSettings.ClientID,
+                authenticationUrl,
+                claims,
+                null,
+                expirationTime
+            );
+
+            // The API support "RS256", "RS384", and "RS512" encryption
+            var credentials = new SigningCredentials(
+                new RsaSecurityKey(_rsa),
+                SecurityAlgorithms.RsaSha512
+            );
+            var header = new JwtHeader(signingCredentials: credentials);
+
+            // Finally, let's create the assertion usign the 
+            // header and payload
+            var jst = new JwtSecurityToken(header, payload);
+            var tokenHandler = new JwtSecurityTokenHandler();
+            string assertion = tokenHandler.WriteToken(jst);
+
+            // We start by preparing the params to send to 
+            // the authentication endpoint
+            var content = new FormUrlEncodedContent(new[]
+            {
+                // This specifies that we are using a JWT assertion
+                // to authenticate
+                new KeyValuePair<string, string>(
+                    "grant_type", "urn:ietf:params:oauth:grant-type:jwt-bearer"),
+                // Our JWT assertion
+                new KeyValuePair<string, string>(
+                    "assertion", assertion),
+                // The OAuth 2 client ID and secret
+                new KeyValuePair<string, string>(
+                    "client_id", _config.BoxAppSettings.ClientID),
+                new KeyValuePair<string, string>(
+                    "client_secret", _config.BoxAppSettings.ClientSecret)
+            });
 
 
-    class Token
-    {
-        public string access_token { get; set; }
-    }
+            var response = await _boxClient.PostAsync(authenticationUrl, content);
+            var data = await response.Content.ReadAsStringAsync();
 
-    public class PasswordFinder : IPasswordFinder
-    {
-        private string password;
-        public PasswordFinder(string _password) { password = _password; }
-        public char[] GetPassword() { return password.ToCharArray(); }
+            BoxToken? token = JsonConvert.DeserializeObject<BoxToken>(data);
+
+            if (token != null && !string.IsNullOrEmpty(token.access_token))
+            {
+                // Set Internal Token
+                access_token = token.access_token;
+                _expiration = DateTime.Now.Add(new TimeSpan(0, 0, token.expires_in));
+                
+                // Staple the default Headers
+                _ = _boxClient.DefaultRequestHeaders.Remove("Authorization");
+                _boxClient.DefaultRequestHeaders.Add("Authorization", "Bearer " + access_token);
+
+                // Signal Ready
+                this.IsReady = true;
+                return true;
+            }
+
+            throw new Exception("Couldnt establish client");
+        }
+
+        private BoxEntry? ParseBoxEntry(string jsonData)
+        {
+            BoxEntry? boxEntry = null;
+
+            if (!string.IsNullOrEmpty(jsonData))
+            {
+                try
+                {
+                    boxEntry = (JsonConvert.DeserializeObject<BoxCollectionResult>(jsonData))?.Entries.FirstOrDefault();
+                }
+                catch (Exception ex)
+                {
+                    boxEntry = (JsonConvert.DeserializeObject<BoxEntry>(jsonData));
+                }
+            }
+
+            return boxEntry;
+        }
+        #endregion
     }
 }

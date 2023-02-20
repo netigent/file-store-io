@@ -19,6 +19,12 @@ namespace Netigent.Utils.FileStoreIO.Models
     {
         public BoxAppSettings BoxAppSettings { get; set; }
         public string EnterpriseID { get; set; }
+
+        public long RootFolder { get; set; } = 0;
+
+        public string FilePrefix { get; set; } = "_$";
+
+        public int TimeoutInMins { get; set; } = 15;
     }
 
     public class BoxAppSettings

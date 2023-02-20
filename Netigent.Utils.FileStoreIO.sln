@@ -5,7 +5,12 @@ VisualStudioVersion = 17.3.32929.385
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Netigent.Utils.FileStoreIO", "Netigent.Utils.FileStoreIO\Netigent.Utils.FileStoreIO.csproj", "{DCF77556-387F-4FD3-A64D-071B9C8617B7}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ConsoleApp2", "ConsoleApp2\ConsoleApp2.csproj", "{821FB80D-599D-4770-9DB8-F93F65F3F90D}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "FileStoreIO.Tests", "FileStoreIO.Tests\FileStoreIO.Tests.csproj", "{F8003A1B-3A9A-4BFF-AC29-1F22C1123F50}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution Items", "{C08CB67F-B062-4E80-BF41-CC1A33EAA13F}"
+	ProjectSection(SolutionItems) = preProject
+		README.md = README.md
+	EndProjectSection
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -17,10 +22,10 @@ Global
 		{DCF77556-387F-4FD3-A64D-071B9C8617B7}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{DCF77556-387F-4FD3-A64D-071B9C8617B7}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{DCF77556-387F-4FD3-A64D-071B9C8617B7}.Release|Any CPU.Build.0 = Release|Any CPU
-		{821FB80D-599D-4770-9DB8-F93F65F3F90D}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{821FB80D-599D-4770-9DB8-F93F65F3F90D}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{821FB80D-599D-4770-9DB8-F93F65F3F90D}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{821FB80D-599D-4770-9DB8-F93F65F3F90D}.Release|Any CPU.Build.0 = Release|Any CPU
+		{F8003A1B-3A9A-4BFF-AC29-1F22C1123F50}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{F8003A1B-3A9A-4BFF-AC29-1F22C1123F50}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{F8003A1B-3A9A-4BFF-AC29-1F22C1123F50}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{F8003A1B-3A9A-4BFF-AC29-1F22C1123F50}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

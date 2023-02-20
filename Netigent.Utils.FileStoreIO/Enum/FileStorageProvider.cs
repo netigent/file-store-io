@@ -2,6 +2,7 @@
 {
 	public enum FileStorageProvider
 	{
+		UseDefault = -1,
 		FileSystem,
 		Database,
 		Box

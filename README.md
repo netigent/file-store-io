@@ -1,11 +1,15 @@
 # FileStoreIOClient
-A generic layer to allow the saving and loading of file from configurable stores using a uniqueFileRef with prefix code for detection in your code.
+A generic layer to allow the saving and loading of file from configurable stores using a uniqueFileRef with prefix code for detection in your code, supports UNC, Database and Box.
 
 # How to use
 Initially thanks for considering using this library - we hope that it gives you some benefits.
 In terms of using the Library the following should get you up and running quickly
 
 # Version Changes
+**1.0.8** Support for Box Storage (>50MB files not yet supported will be in next version), Migrate File function (keep file references and relocate the binary to new location), default Provider
+
+**1.0.7** Relational Filepath Storage, makes it easier to move UNC shares around
+
 **1.0.6** Versioning, if you via Constructor increment maxVersions the app will store that many latest copies, if you push same file+ext in the same mainGroup, subGroup, it considers same file and will return same fileRef keeping X last versions.
 
 **1.0.5** Upgraded to .net 6 LTS
@@ -28,7 +32,24 @@ In terms of using the Library the following should get you up and running quickl
 You can use the client directly as follows, keeping Last 3 versions of the file
 
 ```
-	IFileStoreIOClient fileStoreIOClient = new FileStoreIOClient("mysqlserver connection string", "c:\\temp\\files\\", "dbo", 3);
+    BoxConfig myExampleBoxReference = new BoxConfig()
+    {
+        EnterpriseID = "123456789",
+        BoxAppSettings = new BoxAppSettings()
+        {
+            ClientID = "exampleid12345",
+            ClientSecret = "examplesecret12345",
+            AppAuth = new AppAuth()
+            {
+                Passphrase = "examplepassphrase12345",
+                PrivateKey = "-----BEGIN ENCRYPTED PRIVATE KEY-----\nEXAMPLEEXAMPLEEXMAPLE\n-----END ENCRYPTED PRIVATE KEY-----\n",
+                PublicKeyID = "abc1234",
+            },
+        },
+        RootFolder = 0,
+    };
+
+	IFileStoreIOClient fileStoreIOClient = new FileStoreIOClient("mysqlserver connection string", "c:\\temp\\files\\", "dbo", 3, myExampleBoxReference);
 	var newFile = fileStoreIOClient.File_Get("_$23fe627c5a5b410aa6017db308b71077");
 ```
 
@@ -41,15 +62,30 @@ Define via appSettings, keeping last 5 versions of file.
 
 ```
 "FileStoreIO": {
-    "Database": "mysqlserver connection string",
-    "FileStoreRoot": "c:\\temp\\files\\",
-    "FilePrefix": "_$",
-    "DatabaseSchema": "filestore",
-    "StoreFileAsUniqueRef":  true,
-	"MaxVersions": 5
-  }
+		"Database": "mysqlserver connection string",
+		"FileStoreRoot": "c:\\temp\\files\\",
+		"FilePrefix": "_$",
+		"DatabaseSchema": "filestore",
+		"StoreFileAsUniqueRef":  true,
+		"MaxVersions": 5,
+		"BoxConfig": {
+					EnterpriseID = "123456789",
+					BoxAppSettings = new BoxAppSettings()
+					{
+						ClientID = "exampleid12345",
+						ClientSecret = "examplesecret12345",
+						AppAuth = new AppAuth()
+						{
+							Passphrase = "examplepassphrase12345",
+							PrivateKey = "-----BEGIN ENCRYPTED PRIVATE KEY-----\nEXAMPLEEXAMPLEEXMAPLE\n-----END ENCRYPTED PRIVATE KEY-----\n",
+							PublicKeyID = "abc1234",
+						},
+					},
+					RootFolder = 0,
+		},
+  },
 ```
-  
+ 
 ### Registering In **Startup.cs**
 Register the service into the DI 
 ```
