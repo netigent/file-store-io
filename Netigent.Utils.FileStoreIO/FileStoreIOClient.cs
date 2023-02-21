@@ -48,6 +48,7 @@ namespace Netigent.Utils.FileStoreIO
         {
             _dbClient = new InternalDatabaseClient(fileIOConfig.Value.Database, fileIOConfig.Value.DatabaseSchema);
             _fileStoreRoot = fileIOConfig.Value.FileStoreRoot;
+            _defaultStorage = fileIOConfig.Value.DefaultStorage;
             _filePrefix = fileIOConfig.Value.FilePrefix ?? _notSpecifiedFlag;
             _useUniqueName = fileIOConfig.Value.StoreFileAsUniqueRef;
             _maxVersions = fileIOConfig.Value.MaxVersions > 1 ? fileIOConfig.Value.MaxVersions : 1;
@@ -219,7 +220,7 @@ namespace Netigent.Utils.FileStoreIO
                     {
                         for (int i = 0; i < fileCopies.Count; i++)
                         {
-                            _ = await DeleteFileAsync(fileCopies[i]);
+                            _ = await DeleteFileAsync(fileCopies[i], removeDbReference: true, deleteAllIfBox: true);
                         }
                     }
                 }
@@ -279,7 +280,7 @@ namespace Netigent.Utils.FileStoreIO
                                 saveToLocation: newLocation);
 
                             // Delete the file from Prior Location
-                            _ = await DeleteFileAsync(existingFile);
+                            _ = await DeleteFileAsync(existingFile, removeDbReference: false);
 
                             messages.Add($"Moved {fileInfo} to {newLocation}");
                         }
@@ -366,7 +367,7 @@ namespace Netigent.Utils.FileStoreIO
                         {
                             // Prune versions beyond, max copies
                             var file2Delete = fileCopies[i];
-                            _ = await DeleteFileAsync(file2Delete, true);
+                            _ = await DeleteFileAsync(file2Delete, removeDbReference: true, deleteAllIfBox: false);
                         }
                     }
 
@@ -508,7 +509,7 @@ namespace Netigent.Utils.FileStoreIO
         /// <param name="fileModel"></param>
         /// <param name="removeDbReference"></param>
         /// <returns></returns>
-        private async Task<bool> DeleteFileAsync(InternalFileModel fileModel, bool removeDbReference = false)
+        private async Task<bool> DeleteFileAsync(InternalFileModel fileModel, bool removeDbReference = true, bool deleteAllIfBox = false)
         {
             // If Non-Db Location
             if (fileModel.FileLocation != (int)FileStorageProvider.Database)
@@ -517,7 +518,8 @@ namespace Netigent.Utils.FileStoreIO
                 var client = GetClient(fileModel.FileLocation);
                 if (client != null)
                 {
-                    _ = await client.DeleteFileAsync(fileModel.FilePath);
+                    string deleteRef = deleteAllIfBox && fileModel.FileLocation == (int)FileStorageProvider.Box ? fileModel.FilePath.Split('/')[0] : fileModel.FilePath;
+                    _ = await client.DeleteFileAsync(deleteRef);
                 }
             }
 

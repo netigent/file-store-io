@@ -6,6 +6,8 @@ Initially thanks for considering using this library - we hope that it gives you 
 In terms of using the Library the following should get you up and running quickly
 
 # Version Changes
+**1.0.9** Missing Prop in DI / appSettings for default Storage, updating Readme example
+
 **1.0.8** Support for Box Storage (>50MB files not yet supported will be in next version), Migrate File function (keep file references and relocate the binary to new location), default Provider
 
 **1.0.7** Relational Filepath Storage, makes it easier to move UNC shares around
@@ -47,6 +49,7 @@ You can use the client directly as follows, keeping Last 3 versions of the file
             },
         },
         RootFolder = 0,
+		TimeoutInMins = 15,
     };
 
 	IFileStoreIOClient fileStoreIOClient = new FileStoreIOClient("mysqlserver connection string", "c:\\temp\\files\\", "dbo", 3, myExampleBoxReference);
@@ -66,23 +69,23 @@ Define via appSettings, keeping last 5 versions of file.
 		"FileStoreRoot": "c:\\temp\\files\\",
 		"FilePrefix": "_$",
 		"DatabaseSchema": "filestore",
-		"StoreFileAsUniqueRef":  true,
+		"StoreFileAsUniqueRef":  false,
 		"MaxVersions": 5,
-		"BoxConfig": {
-					EnterpriseID = "123456789",
-					BoxAppSettings = new BoxAppSettings()
-					{
-						ClientID = "exampleid12345",
-						ClientSecret = "examplesecret12345",
-						AppAuth = new AppAuth()
-						{
-							Passphrase = "examplepassphrase12345",
-							PrivateKey = "-----BEGIN ENCRYPTED PRIVATE KEY-----\nEXAMPLEEXAMPLEEXMAPLE\n-----END ENCRYPTED PRIVATE KEY-----\n",
-							PublicKeyID = "abc1234",
-						},
-					},
-					RootFolder = 0,
-		},
+		"DefaultStorage": "Box",
+		"Box": {
+			  "EnterpriseID": "123456789",
+			  "RootFolder": 0,
+			  "TimeoutInMins": 15,
+			  "BoxAppSettings": {
+					"ClientID": "exampleid12345",
+					"ClientSecret": "examplesecret12345",
+					"AppAuth": {
+						  "Passphrase": "examplepassphrase12345",
+						  "PrivateKey": "-----BEGIN ENCRYPTED PRIVATE KEY-----\nEXAMPLEEXAMPLEEXMAPLE\n-----END ENCRYPTED PRIVATE KEY-----\n",
+						  "PublicKeyID": "abc1234"
+					}
+			  }
+		}
   },
 ```
  
@@ -130,7 +133,7 @@ namespace Netigent.Examples.UploadApp.Controllers
 		public async Task<IActionResult> Upload(IFormFile selectedFile, string location = "database", string description = "", string customerCode = "", string itemType = "")
 		{
 			var uploadLocation = (location ?? "").Equals("Database", System.StringComparison.CurrentCultureIgnoreCase) ? FileStorageProvider.Database : FileStorageProvider.FileSystem;
-			var uploadedCode = await _ioClient.File_Upsert(selectedFile, uploadLocation, description: description, customerCode, itemType);
+			var uploadedCode = await _ioClient.File_UpsertAsync(selectedFile, uploadLocation, description: description, customerCode, itemType);
 			TempData["Message"] = $"File successfully uploaded to {uploadLocation.ToString()} {uploadedCode}";
 
 			//Setting success properties
@@ -154,7 +157,7 @@ namespace Netigent.Examples.UploadApp.Controllers
 		public async Task<IActionResult> DeleteFile(string id)
 		{
 			var xyz = await something();
-			var fileInfo = _ioClient.File_Delete(id);
+			var fileInfo = await _ioClient.File_DeleteAsync(id);
 			return RedirectToAction("Index");
 		}
 	}

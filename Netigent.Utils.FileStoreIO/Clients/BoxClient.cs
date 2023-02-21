@@ -401,7 +401,8 @@ namespace Netigent.Utils.FileStoreIO.Clients
             string url = $"https://api.box.com/2.0/files/{boxRef.BoxId}{(boxRef.FileVersionId >= 0 ? $"/versions/{boxRef.FileVersionId}" : string.Empty)}";
 
 
-            return (await DeleteAsync(url)).IsSuccessStatusCode;
+            bool isSuccess = (await DeleteAsync(url)).IsSuccessStatusCode;
+            return isSuccess;
         }
 
         #region Internal Functions
@@ -453,7 +454,9 @@ namespace Netigent.Utils.FileStoreIO.Clients
             {
                 if (await PreflightChecks())
                 {
-                    return await _boxClient.DeleteAsync(url);
+                    var response = await _boxClient.DeleteAsync(url);
+                    string body = await response.Content?.ReadAsStringAsync();
+                    return (HttpResponseMessage)response;
                 }
                 else
                 {

@@ -9,10 +9,11 @@ namespace Netigent.Utils.FileStoreIO.Models
         public string FileStoreRoot { get; set; }
         public string FilePrefix { get; set; } = "_$";
         public string DatabaseSchema { get; set; } = "fileStore";
-        public bool StoreFileAsUniqueRef { get; set; } = true;
+        public bool StoreFileAsUniqueRef { get; set; } = false;
         public int MaxVersions { get; set; } = 1;
-
+        public FileStorageProvider DefaultStorage { get; set; } = FileStorageProvider.UseDefault;
         public BoxConfig? Box { get; set; }
+
     }
 
     public class BoxConfig
@@ -21,8 +22,6 @@ namespace Netigent.Utils.FileStoreIO.Models
         public string EnterpriseID { get; set; }
 
         public long RootFolder { get; set; } = 0;
-
-        public string FilePrefix { get; set; } = "_$";
 
         public int TimeoutInMins { get; set; } = 15;
     }
