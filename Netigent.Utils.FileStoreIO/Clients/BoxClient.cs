@@ -15,7 +15,10 @@ using System.Threading.Tasks;
 using System.Text;
 using System.Linq;
 using Netigent.Utils.FileStoreIO.Enum;
-using System.Net;
+using Netigent.Utils.FileStoreIO.Helpers;
+using System.Collections.ObjectModel;
+using System.ComponentModel;
+using Netigent.Utils.FileStoreIO.Extensions;
 
 namespace Netigent.Utils.FileStoreIO.Clients
 {
@@ -29,22 +32,22 @@ namespace Netigent.Utils.FileStoreIO.Clients
         private string access_token { get; set; }
         private HttpClient _boxClient { get; }
         private DateTime _expiration { get; set; }
-        private long _rootFolder { get; }
+
+        private readonly long _rootId = 0;
+
         private int _maxVersions { get; }
+        private ObservableCollection<InternalFileModel> _indexList { get; set; }
         #endregion
 
         #region Public Props
         public bool IsReady { get; set; } = false;
+
+        // public IProgress<int> Scanned { get; set; } = new Progress<int>();
         #endregion
 
         #region ctor
         public BoxClient(BoxConfig config, int maxVersions = 1)
         {
-            // Set the RootFolder we're targeting, if less than 0 or not set etc, the root is box deault root
-            _rootFolder = config.RootFolder >= 0
-                ? config.RootFolder
-                : 0;
-
             _maxVersions = maxVersions >= 1
                 ? maxVersions
                 : 1;
@@ -66,54 +69,102 @@ namespace Netigent.Utils.FileStoreIO.Clients
             _boxClient = new HttpClient();
             _boxClient.Timeout = new TimeSpan(0, _config.TimeoutInMins, 0);
 
-            // _ = RefreshToken().Result;
-            //return;
+            // Startup the client and get ID etc
+            _ = PreflightChecks().Result;
+
+            if(IsReady)
+            {
+                // Attempt inital convertToLong
+                long potentialRootId = AsLong(config.RootFolder);
+
+                if(!string.IsNullOrEmpty(config.RootFolder) && potentialRootId == -1)
+                {
+                    // We're dealing with a string based rootName
+                    long resolvedId = ResolveId(folderName: config.RootFolder, parentId: 0, autoCreate: config.AutoCreateRoot ).Result;
+                    if(resolvedId == -1)
+                    {
+                        // Root Folder is string, but not found and autoCreate was false...
+                        IsReady = false;
+                        return;
+                    }
+
+                    // String named root found and id resolved
+                    _rootId = resolvedId;
+                }
+                else if (potentialRootId >= 0 )
+                {
+                    _rootId = potentialRootId;
+                }
+                else
+                {
+                    _rootId = 0;
+                }
+            }
         }
         #endregion
 
-        public RSA CreateRSAProvider(RSAParameters rp)
+        #region Implementation
+        public async Task IndexContentsAsync(ObservableCollection<InternalFileModel> indexList)
         {
-            var rsaCsp = RSA.Create();
-            rsaCsp.ImportParameters(rp);
-            return rsaCsp;
+            await IndexContentsAsync(indexList, string.Empty, _rootId);
+            return;
         }
 
-        public RSAParameters ToRSAParameters(RsaPrivateCrtKeyParameters privKey)
+        private async Task IndexContentsAsync(ObservableCollection<InternalFileModel> indexList, string filePath, long folderId)
         {
-            RSAParameters rp = new RSAParameters();
-            rp.Modulus = privKey.Modulus.ToByteArrayUnsigned();
-            rp.Exponent = privKey.PublicExponent.ToByteArrayUnsigned();
-            rp.P = privKey.P.ToByteArrayUnsigned();
-            rp.Q = privKey.Q.ToByteArrayUnsigned();
-            rp.D = ConvertRSAParametersField(privKey.Exponent, rp.Modulus.Length);
-            rp.DP = ConvertRSAParametersField(privKey.DP, rp.P.Length);
-            rp.DQ = ConvertRSAParametersField(privKey.DQ, rp.Q.Length);
-            rp.InverseQ = ConvertRSAParametersField(privKey.QInv, rp.Q.Length);
-            return rp;
-        }
-
-        public byte[] ConvertRSAParametersField(Org.BouncyCastle.Math.BigInteger n, int size)
-        {
-            byte[] bs = n.ToByteArrayUnsigned();
-            if (bs.Length == size)
-                return bs;
-            if (bs.Length > size)
-                throw new ArgumentException("Specified size too small", "size");
-            byte[] padded = new byte[size];
-            Array.Copy(bs, 0, padded, size - bs.Length, bs.Length);
-            return padded;
-        }
-
-        private long AsLong(string folderId)
-        {
-            try
+            List<InternalFileModel> output = new();
+            var contents = await GetSubItemsListAsync(folderId);
+            long totalItems = contents.LongCount();
+            if (totalItems > 0)
             {
-                return long.Parse(folderId);
+                for (int i = 0; i < totalItems; i++)
+                {
+                    // Get ref to item
+                    var item = contents[i];
+
+                    // Parse BoxRef
+                    BoxRef boxFolderRef = new BoxRef(item);
+
+                    if (item.ItemType == BoxItemType.Folder)
+                    {
+                        // Folder Path
+                        string folderPathToScan = string.IsNullOrEmpty(filePath) ? item.Name : $"{filePath}/{item.Name}";
+
+                        // Add Files from Within
+                        await IndexContentsAsync(indexList, folderPathToScan, boxFolderRef.BoxId);
+                    }
+                    else if (item.ItemType == BoxItemType.File)
+                    {
+                        var fi = new FileInfo(item.Name);
+                        string ext = !string.IsNullOrEmpty(fi.Extension) ? fi.Extension : string.Empty;
+                        string nameOnly = !string.IsNullOrEmpty(fi.Extension) ? fi.Name.Replace(fi.Extension, string.Empty) : fi.Name;
+                        string mimeType = MimeHelper.GetMimeType(fi.Extension);
+
+                        var getFileInfo = (await GetFileInfo(boxFolderRef.BoxId.ToString())).FirstOrDefault();
+
+                        output.Add(new InternalFileModel
+                        {
+                            Name = nameOnly,
+                            Description = getFileInfo.Description,
+                            FilePath = boxFolderRef.AsFilePath,
+                            Created = getFileInfo.CreatedDt,
+                            Modified = getFileInfo.ModifiedDt,
+                            Extension = ext,
+                            FileLocation = (int)FileStorageProvider.Box,
+                            MainGroup = filePath,
+                            MimeType = mimeType,
+                            SizeInBytes = getFileInfo.Size ?? -1,
+                        });
+                    }
+                }
             }
-            catch
+
+            if (output.Count > 0)
             {
-                return -1;
+                indexList.InsertRange(output);
             }
+
+            return;
         }
 
         public async Task<BoxEntry> GetFolderAsync(long folderId)
@@ -124,79 +175,6 @@ namespace Netigent.Utils.FileStoreIO.Clients
             return response;
         }
 
-        public async Task<List<BoxEntry>> GetSubItemsListAsync(long folderId, int offSet = 0, int pageSize = 1000, BoxItemType itemType = BoxItemType.All)
-        {
-            List<BoxEntry> items = new();
-
-            // 1 - 1000
-            int itemsLimit = pageSize > 1000
-                    ? 1000
-                    : pageSize < 1
-                        ? 1
-                        : pageSize;
-
-            string qs = $"limit={itemsLimit}&offset={offSet}";
-            string requestUrl = $"{ApiUrl}/folders/{folderId}/items?{qs}";
-
-            var response = await GetAsync<BoxPagedCollectionResult>(requestUrl);
-
-            // Add this batch and do we need to go to next page?
-            items.AddRange(response.Entries.Where(x => itemType == BoxItemType.All || x.Type.Equals(itemType.ToString(), StringComparison.InvariantCultureIgnoreCase)));
-            if (response.TotalCount > itemsLimit && response.TotalCount > (response.Limit + response.Offset))
-            {
-                int nextOffset = (response.Limit + response.Offset);
-                items.AddRange(await GetSubItemsListAsync(folderId, nextOffset, itemsLimit, itemType));
-            }
-
-            return items;
-        }
-
-        private async Task<BoxEntry> CreateFolder(string folderName, long parentId)
-        {
-            string requestUrl = $"{ApiUrl}/folders";
-            string boxAttribute = BoxAttribute(folderName, parentId);
-
-            var result = await PostContentAsync(requestUrl, boxAttribute, null);
-            if (result.IsSuccess)
-            {
-                return result.Result;
-            }
-
-            throw new Exception(result.Message);
-        }
-
-        private async Task<long> ResolveId(string folderName, long parentId = -1, bool autoCreate = true)
-        {
-            long targetBoxId = -1;
-            long parentBoxId = parentId >= 0 ? parentId : _rootFolder;
-
-            if (string.IsNullOrEmpty(folderName))
-            {
-                return parentBoxId;
-            }
-            else
-            {
-                // Get List of FolderNames from Box
-                var foldersList = await GetSubItemsListAsync(folderId: parentBoxId, itemType: BoxItemType.Folder);
-
-                // Find Folder matching name
-                BoxEntry? subFolder = foldersList.FirstOrDefault(x => x.Name.Equals(folderName, StringComparison.InvariantCultureIgnoreCase));
-                if (subFolder == null || subFolder == default)
-                {
-                    // Ask box to create the folder
-                    if (autoCreate)
-                    {
-                        subFolder = await CreateFolder(folderName, parentBoxId);
-                        targetBoxId = -2;
-                    }
-                }
-
-                targetBoxId = AsLong(subFolder.Id);
-            }
-
-            return targetBoxId;
-        }
-
         public async Task<string> SaveFileAsync(InternalFileModel fileModel)
         {
             if (fileModel.Data?.Length == null)
@@ -205,7 +183,7 @@ namespace Netigent.Utils.FileStoreIO.Clients
                 return string.Empty;
             }
 
-            long folderId = await ResolveId(fileModel.SubGroup, await ResolveId(fileModel.MainGroup, _rootFolder));
+            long folderId = await ResolveId(fileModel.SubGroup, await ResolveId(fileModel.MainGroup, _rootId));
             string endpoint = $"{UploadUrl}/content";
             string boxAttribute = BoxAttribute(fileModel.RawName + fileModel.Extension, folderId);
 
@@ -254,7 +232,164 @@ namespace Netigent.Utils.FileStoreIO.Clients
             }
         }
 
+        public async Task<InternalFileModel> GetFileAsync(string filePath)
+        {
+            var boxRef = new BoxRef(filePath);
 
+            //TODO: Need to follow this
+            // https://developer.box.com/reference/get-files-id-content/
+            // handle 202 / 302 and retry-after
+
+            string url = $"https://api.box.com/2.0/files/{boxRef.BoxId}/content{(boxRef.FileVersionId >= 0 ? $"?version={boxRef.FileVersionId}" : string.Empty)}";
+            var result = await GetAsync<InternalFileModel>(url);
+
+            return result;
+        }
+
+        public async Task<bool> DeleteFileAsync(string filePath)
+        {
+            var boxRef = new BoxRef(filePath);
+            string url = $"https://api.box.com/2.0/files/{boxRef.BoxId}{(boxRef.FileVersionId >= 0 ? $"/versions/{boxRef.FileVersionId}" : string.Empty)}";
+
+
+            bool isSuccess = (await DeleteAsync(url)).IsSuccessStatusCode;
+            return isSuccess;
+        }
+        #endregion
+
+        #region Internal Functions
+        private async Task<List<BoxEntry>> GetSubItemsListAsync(long folderId, int offSet = 0, int pageSize = 1000, BoxItemType itemType = BoxItemType.All)
+        {
+            List<BoxEntry> items = new();
+
+            // 1 - 1000
+            int itemsLimit = pageSize > 1000
+                    ? 1000
+                    : pageSize < 1
+                        ? 1
+                        : pageSize;
+
+            string qs = $"limit={itemsLimit}&offset={offSet}";
+            string requestUrl = $"{ApiUrl}/folders/{folderId}/items?{qs}";
+
+            var response = await GetAsync<BoxPagedCollectionResult>(requestUrl);
+
+            // Add this batch and do we need to go to next page?
+            items.AddRange(response.Entries.Where(x => itemType == BoxItemType.All || x.Type.Equals(itemType.ToString(), StringComparison.InvariantCultureIgnoreCase)));
+            if (response.TotalCount > itemsLimit && response.TotalCount > (response.Limit + response.Offset))
+            {
+                int nextOffset = (response.Limit + response.Offset);
+                items.AddRange(await GetSubItemsListAsync(folderId, nextOffset, itemsLimit, itemType));
+            }
+
+            return items;
+        }
+
+        private RSA CreateRSAProvider(RSAParameters rp)
+        {
+            var rsaCsp = RSA.Create();
+            rsaCsp.ImportParameters(rp);
+            return rsaCsp;
+        }
+        private RSAParameters ToRSAParameters(RsaPrivateCrtKeyParameters privKey)
+        {
+            RSAParameters rp = new RSAParameters();
+            rp.Modulus = privKey.Modulus.ToByteArrayUnsigned();
+            rp.Exponent = privKey.PublicExponent.ToByteArrayUnsigned();
+            rp.P = privKey.P.ToByteArrayUnsigned();
+            rp.Q = privKey.Q.ToByteArrayUnsigned();
+            rp.D = ConvertRSAParametersField(privKey.Exponent, rp.Modulus.Length);
+            rp.DP = ConvertRSAParametersField(privKey.DP, rp.P.Length);
+            rp.DQ = ConvertRSAParametersField(privKey.DQ, rp.Q.Length);
+            rp.InverseQ = ConvertRSAParametersField(privKey.QInv, rp.Q.Length);
+            return rp;
+        }
+
+        private byte[] ConvertRSAParametersField(Org.BouncyCastle.Math.BigInteger n, int size)
+        {
+            byte[] bs = n.ToByteArrayUnsigned();
+            if (bs.Length == size)
+                return bs;
+            if (bs.Length > size)
+                throw new ArgumentException("Specified size too small", "size");
+            byte[] padded = new byte[size];
+            Array.Copy(bs, 0, padded, size - bs.Length, bs.Length);
+            return padded;
+        }
+
+        /// <summary>
+        /// Will try and convert number to long, if its not a long or empty string, you'll get failedLong
+        /// </summary>
+        /// <param name="folderId"></param>
+        /// <returns></returns>
+        private long AsLong(string folderId, long failedLong = -1)
+        {
+            if (string.IsNullOrEmpty(folderId))
+            {
+                return failedLong;
+            }
+
+            try
+            {
+                return long.Parse(folderId);
+            }
+            catch
+            {
+                return failedLong;
+            }
+        }
+
+        private async Task<BoxEntry> CreateFolder(string folderName, long parentId)
+        {
+            string requestUrl = $"{ApiUrl}/folders";
+            string boxAttribute = BoxAttribute(folderName, parentId);
+
+            var result = await PostContentAsync(requestUrl, boxAttribute, null);
+            if (result.IsSuccess)
+            {
+                return result.Result;
+            }
+
+            throw new Exception(result.Message);
+        }
+
+        /// <summary>
+        /// Finds the folderByName at the passed in parentId or rootId = 0, if not found, will autoCreate or give -1 if autoCreate = false
+        /// </summary>
+        /// <param name="folderName"></param>
+        /// <param name="parentId"></param>
+        /// <param name="autoCreate"></param>
+        /// <returns></returns>
+        private async Task<long> ResolveId(string folderName, long parentId = -1, bool autoCreate = true)
+        {
+            long targetBoxId = -1;
+            long parentBoxId = parentId >= 0 ? parentId : _rootId;
+
+            if (string.IsNullOrEmpty(folderName))
+            {
+                return parentBoxId;
+            }
+            else
+            {
+                // Get List of FolderNames from Box
+                var foldersList = await GetSubItemsListAsync(folderId: parentBoxId, itemType: BoxItemType.Folder);
+
+                // Find Folder matching name
+                BoxEntry? subFolder = foldersList.FirstOrDefault(x => x.Name.Equals(folderName, StringComparison.InvariantCultureIgnoreCase));
+                if (subFolder == null || subFolder == default)
+                {
+                    // Ask box to create the folder
+                    if (autoCreate)
+                    {
+                        subFolder = await CreateFolder(folderName, parentBoxId);
+                    }
+                }
+
+                targetBoxId = AsLong(subFolder?.Id ?? "");
+            }
+
+            return targetBoxId;
+        }
 
         private async Task<string> UploadNewVersionAsync(InternalFileModel fileModel, string existingFileId, long folderId)
         {
@@ -285,7 +420,7 @@ namespace Netigent.Utils.FileStoreIO.Clients
             return JsonConvert.SerializeObject(boxAttribute);
         }
 
-        public async Task<BoxEntry[]> GetFileInfo(string fileId, bool includePreviousVersions = false)
+        private async Task<BoxEntry[]> GetFileInfo(string fileId, bool includePreviousVersions = false)
         {
             string getFileInfoEndpoint = $"{ApiUrl}/files/{fileId}";
             var fileInfoResult = await GetAsync<BoxResult>(getFileInfoEndpoint);
@@ -351,10 +486,6 @@ namespace Netigent.Utils.FileStoreIO.Clients
             return fileCollectionResult.ToArray();
         }
 
-
-
-
-
         private async Task<BoxApiResult> UploadPreflightAsync(string boxAttribute)
         {
             _ = await PreflightChecks();
@@ -376,36 +507,6 @@ namespace Netigent.Utils.FileStoreIO.Clients
                 Result = entry,
             };
         }
-
-   
-
-
-
-        public async Task<InternalFileModel> GetFileAsync(string filePath)
-        {
-            var boxRef = new BoxRef(filePath);
-
-            //TODO: Need to follow this
-            // https://developer.box.com/reference/get-files-id-content/
-            // handle 202 / 302 and retry-after
-
-            string url = $"https://api.box.com/2.0/files/{boxRef.BoxId}/content{(boxRef.FileVersionId >= 0 ? $"?version={boxRef.FileVersionId}" : string.Empty)}";
-            var result = await GetAsync<InternalFileModel>(url);
-
-            return result;
-        }
-
-        public async Task<bool> DeleteFileAsync(string filePath)
-        {
-            var boxRef = new BoxRef(filePath);
-            string url = $"https://api.box.com/2.0/files/{boxRef.BoxId}{(boxRef.FileVersionId >= 0 ? $"/versions/{boxRef.FileVersionId}" : string.Empty)}";
-
-
-            bool isSuccess = (await DeleteAsync(url)).IsSuccessStatusCode;
-            return isSuccess;
-        }
-
-        #region Internal Functions
 
         private async Task<T> GetAsync<T>(string url)
         {
@@ -626,7 +727,7 @@ namespace Netigent.Utils.FileStoreIO.Clients
                 // Set Internal Token
                 access_token = token.access_token;
                 _expiration = DateTime.Now.Add(new TimeSpan(0, 0, token.expires_in));
-                
+
                 // Staple the default Headers
                 _ = _boxClient.DefaultRequestHeaders.Remove("Authorization");
                 _boxClient.DefaultRequestHeaders.Add("Authorization", "Bearer " + access_token);
@@ -636,7 +737,8 @@ namespace Netigent.Utils.FileStoreIO.Clients
                 return true;
             }
 
-            throw new Exception("Couldnt establish client");
+            this.IsReady = false;
+            return false;
         }
 
         private BoxEntry? ParseBoxEntry(string jsonData)

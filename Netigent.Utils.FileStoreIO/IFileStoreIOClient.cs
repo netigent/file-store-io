@@ -10,14 +10,18 @@ namespace Netigent.Utils.FileStoreIO
     public interface IFileStoreIOClient
     {
         /// <summary>
-        /// Has the FileStore table been created in the database, and has current account context been able to create and delete a test file?
+        /// Has the FileStore table been created in the database?
         /// </summary>
-        bool IsReady { get; }
+        bool IsDbStorageAvailable { get; }
+
+        bool IsFileSystemAvailable { get; }
+
+        bool IsBoxAvailable { get; }
 
         /// <summary>
         /// Execution messages from the client.
         /// </summary>
-        List<string> Messages { get; }
+        List<string> OutputMessages { get; }
 
         /// <summary>
         /// Insert / Update a File to the intended file storage
@@ -60,12 +64,20 @@ namespace Netigent.Utils.FileStoreIO
         Task<bool> File_DeleteAsync(string fileRef);
 
         /// <summary>
-        /// Get All Files stored within the System, it'll return all indexed copies, whether in db, filesystem of else where
+        /// Get All Files stored within the System, it'll return all indexed copies, whether in db, filesystem of elsewhere
         /// </summary>
         /// <param name="mainGroup">(Optional) Used when storing to filesystem will store as \\myserver\filestore\{mainGroup}\{subGroup}\filename.ext</param>
         /// <param name="subGroup">(Optional) Used when storing to filesystem will store as \\myserver\filestore\{mainGroup}\{subGroup}\filename.ext</param>
         /// <returns></returns>
         List<InternalFileModel> Files_GetAll(string mainGroup = "", string subGroup = "");
+
+        /// <summary>
+        /// Get All Files stored within the System, it'll return all indexed copies, whether in db, filesystem of elsewhere
+        /// </summary>
+        /// <param name="pathParts">string array of path sections in order e.g. new [] { "HR", "Training", "Sales" }</param>
+        /// <param name="joinParts">Seperator default is '/'</param>
+        /// <returns></returns>
+        List<InternalFileModel> Files_GetAll(string[] pathParts, char joinParts = '/');
 
         /// <summary>
         /// Get FileStore Info on the file, including all versions.
@@ -81,5 +93,12 @@ namespace Netigent.Utils.FileStoreIO
         /// <param name="newLocation">Where to store file, current options Box, FileSystem (UNC / Folder) or Database</param>
         /// <returns></returns>
         Task<ResultModel> File_Migrate(string fileRef, FileStorageProvider newLocation);
+
+        /// <summary>
+        /// Reindex all files.
+        /// </summary>
+        /// <param name="indexLocation">Where to store file, current options Box, FileSystem (UNC / Folder) or Database</param>
+        /// <returns></returns>
+        Task<ResultModel> File_IndexAllAsync(FileStorageProvider indexLocation);
     }
 }

@@ -2,6 +2,8 @@
 using System.IO;
 using System;
 using System.Threading.Tasks;
+using System.Collections.Generic;
+using System.Collections.ObjectModel;
 
 namespace Netigent.Utils.FileStoreIO.Clients
 {
@@ -12,24 +14,26 @@ namespace Netigent.Utils.FileStoreIO.Clients
         private const string _fileFlag = @":\";
         private const string _internetFlag = @"://";
         private const string _networkFlag = @"\\";
+        private readonly bool _useUniqueNames;
+
         private string _fileStoreRoot { get; }
 
         #endregion
 
         #region Public Props
         public int _maxVersions { get; }
-        
+
         public bool IsReady { get; set; } = false;
         #endregion
 
         #region ctor
-        public FileSystemClient(string rootFolder)
+        public FileSystemClient(string rootFolder, bool useUniqueNames)
         {
             _fileStoreRoot = rootFolder;
+            _useUniqueNames = useUniqueNames;
 
             //Test file to check access to the file system
             string testFile = Path.Combine(_fileStoreRoot, TestFile);
-
             try
             {
                 if (!Directory.Exists(_fileStoreRoot))
@@ -48,7 +52,6 @@ namespace Netigent.Utils.FileStoreIO.Clients
             catch
             {
                 IsReady = false;
-                throw;
             }
         }
         #endregion
@@ -58,17 +61,24 @@ namespace Netigent.Utils.FileStoreIO.Clients
         {
             try
             {
+                if (!IsReady)
+                {
+                    throw new Exception($"File System Location {_fileStoreRoot}, is not available or accessible, check permissions etc");
+                }
+
                 // Will be stored in db
-                string fileNameWithExt = $"{fileModel.Name}{fileModel.Extension}";
                 string relativeFolder = Path.Combine(fileModel.MainGroup, fileModel.SubGroup);
 
                 // Ensure folder exists
                 string absoluteFolder = Path.Combine(_fileStoreRoot, relativeFolder);
+
                 bool absoluteFolderExists = Directory.Exists(absoluteFolder);
                 if (!absoluteFolderExists)
                 {
                     Directory.CreateDirectory(absoluteFolder);
                 }
+
+                string fileNameWithExt = $"{fileModel.Name}{fileModel.Extension}";
 
                 //Full filepath
                 string absoluteFile = Path.Combine(absoluteFolder, fileNameWithExt);
@@ -97,46 +107,64 @@ namespace Netigent.Utils.FileStoreIO.Clients
 
         public async Task<InternalFileModel> GetFileAsync(string filePath)
         {
-            string absoluteFilePath = GetAbsoluteFilePath(filePath);
-
-            if (!File.Exists(absoluteFilePath))
-                return null;
-
-            FileInfo fileInfo = new FileInfo(absoluteFilePath);
-
-            //Get from filesystem
-            var memory = new MemoryStream();
-            using (var stream = new FileStream(absoluteFilePath, FileMode.Open))
+            try
             {
-                await stream.CopyToAsync(memory);
+                if (!IsReady)
+                {
+                    throw new Exception($"File System Location {_fileStoreRoot}, is not available or accessible, check permissions etc");
+                }
+
+                string absoluteFilePath = GetAbsoluteFilePath(filePath);
+
+                if (!File.Exists(absoluteFilePath))
+                    return null;
+
+                FileInfo fileInfo = new FileInfo(absoluteFilePath);
+
+                //Get from filesystem
+                var memory = new MemoryStream();
+                using (var stream = new FileStream(absoluteFilePath, FileMode.Open))
+                {
+                    await stream.CopyToAsync(memory);
+                }
+                memory.Position = 0;
+
+                return new InternalFileModel
+                {
+                    Data = memory.ToArray(),
+                    Name = fileInfo.Name,
+                    Extension = fileInfo.Extension,
+                };
             }
-            memory.Position = 0;
-
-            return new InternalFileModel
+            catch (Exception ex)
             {
-                Data = memory.ToArray(),
-                Name = fileInfo.Name,
-                Extension = fileInfo.Extension,
-            };
+                throw ex;
+            }
         }
 
         public Task<bool> DeleteFileAsync(string fileId)
         {
-            // This will be the true path
-            string absoluteFilePath = GetAbsoluteFilePath(fileId);
-
-            if (System.IO.File.Exists(absoluteFilePath))
+            try
             {
-                System.IO.File.Delete(absoluteFilePath);
+                if (!IsReady)
+                {
+                    throw new Exception($"File System Location {_fileStoreRoot}, is not available or accessible, check permissions etc");
+                }
+
+                // This will be the true path
+                string absoluteFilePath = GetAbsoluteFilePath(fileId);
+
+                if (System.IO.File.Exists(absoluteFilePath))
+                {
+                    System.IO.File.Delete(absoluteFilePath);
+                }
+
+                return Task.FromResult(true);
             }
-
-            return Task.FromResult(true);
-        }
-
-
-        public Task<bool> DeleteFileAsync(long fileId, long? versionId)
-        {
-            return Task.FromResult(false);
+            catch (Exception ex)
+            {
+                throw ex;
+            }
         }
         #endregion
 
@@ -160,6 +188,16 @@ namespace Netigent.Utils.FileStoreIO.Clients
             {
                 return Path.Combine(_fileStoreRoot, filePath);
             }
+        }
+
+        public Task IndexContentsAsync()
+        {
+            throw new NotImplementedException();
+        }
+
+        public Task IndexContentsAsync(ObservableCollection<InternalFileModel> indexList)
+        {
+            throw new NotImplementedException();
         }
         #endregion
     }

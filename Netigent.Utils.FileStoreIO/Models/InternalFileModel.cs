@@ -56,6 +56,7 @@ namespace Netigent.Utils.FileStoreIO.Models
             FileLocation = model.FileLocation;
             MainGroup = model.MainGroup;
             SubGroup = model.SubGroup;
+            SizeInBytes = model.SizeInBytes;
         }
         #endregion
 
@@ -73,5 +74,6 @@ namespace Netigent.Utils.FileStoreIO.Models
         public int FileLocation { get; set; }
         public string MainGroup { get; set; }
         public string SubGroup { get; set; }
+        public long SizeInBytes { get; set; } = -1;
     }
 }

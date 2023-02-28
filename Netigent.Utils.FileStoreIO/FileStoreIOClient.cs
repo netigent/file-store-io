@@ -7,6 +7,8 @@ using Netigent.Utils.FileStoreIO.Helpers;
 using Netigent.Utils.FileStoreIO.Models;
 using System;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
+using System.ComponentModel;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
@@ -16,10 +18,10 @@ namespace Netigent.Utils.FileStoreIO
     public class FileStoreIOClient : IFileStoreIOClient
     {
         #region public props
-        public bool IsReady { get; internal set; } = false;
-        public bool FileSystemStorageAvailable { get; internal set; } = false;
-        public List<string> Messages { get; internal set; } = new();
-
+        public bool IsDbStorageAvailable { get; internal set; } = false;
+        public List<string> OutputMessages { get; internal set; } = new();
+        public bool IsFileSystemAvailable { get; internal set; } = false;
+        public bool IsBoxAvailable { get; internal set; } = false;
         #endregion
 
         #region internal settings
@@ -47,29 +49,24 @@ namespace Netigent.Utils.FileStoreIO
         public FileStoreIOClient(IOptions<FileStoreIOConfig> fileIOConfig)
         {
             _dbClient = new InternalDatabaseClient(fileIOConfig.Value.Database, fileIOConfig.Value.DatabaseSchema);
-            _fileStoreRoot = fileIOConfig.Value.FileStoreRoot;
-            _defaultStorage = fileIOConfig.Value.DefaultStorage;
-            _filePrefix = fileIOConfig.Value.FilePrefix ?? _notSpecifiedFlag;
-            _useUniqueName = fileIOConfig.Value.StoreFileAsUniqueRef;
-            _maxVersions = fileIOConfig.Value.MaxVersions > 1 ? fileIOConfig.Value.MaxVersions : 1;
+            IsDbStorageAvailable = StartupCheck();
 
-            _boxConfig = fileIOConfig.Value.Box;
-
-            _boxClient = new BoxClient(_boxConfig, _maxVersions);
-            _uncClient = new FileSystemClient(_fileStoreRoot);
-
-            Startup(out string fileSystemErrorMessage);
-
-            if (string.IsNullOrEmpty(fileSystemErrorMessage) && string.IsNullOrEmpty(_dbClient.DbClientErrorMessage))
-                IsReady = true;
-
-            else
+            if (IsDbStorageAvailable)
             {
-                if (!string.IsNullOrEmpty(_dbClient.DbClientErrorMessage))
-                    Messages.Add(_dbClient.DbClientErrorMessage);
+                // Assign Options
+                _fileStoreRoot = fileIOConfig.Value.FileStoreRoot;
+                _defaultStorage = fileIOConfig.Value.DefaultStorage;
+                _filePrefix = fileIOConfig.Value.FilePrefix ?? _notSpecifiedFlag;
+                _useUniqueName = fileIOConfig.Value.StoreFileAsUniqueRef;
+                _maxVersions = fileIOConfig.Value.MaxVersions > 1 ? fileIOConfig.Value.MaxVersions : 1;
+                _boxConfig = fileIOConfig.Value.Box;
 
-                if (!string.IsNullOrEmpty(fileSystemErrorMessage))
-                    Messages.Add(fileSystemErrorMessage);
+                // Startup Clients
+                _uncClient = new FileSystemClient(_fileStoreRoot, _useUniqueName);
+                IsFileSystemAvailable = _uncClient.IsReady;
+
+                _boxClient = new BoxClient(_boxConfig, _maxVersions);
+                IsBoxAvailable = _boxClient.IsReady;
             }
         }
 
@@ -93,29 +90,25 @@ namespace Netigent.Utils.FileStoreIO
         {
             //Create the filestore client
             _dbClient = new InternalDatabaseClient(databaseConnection, dbSchema);
-            _fileStoreRoot = fileStoreRoot;
-            _filePrefix = filePrefix;
-            _useUniqueName = useUniqueRef;
-            _defaultStorage = defaultFileStore;
-            _maxVersions = maxVersions > 1 ? maxVersions : 1;
 
-            _boxConfig = boxConfig;
+            IsDbStorageAvailable = StartupCheck();
 
-            _boxClient = new BoxClient(boxConfig, _maxVersions);
-            _uncClient = new FileSystemClient(_fileStoreRoot);
-
-            Startup(out string fileSystemErrorMessage);
-
-            if (string.IsNullOrEmpty(fileSystemErrorMessage) && string.IsNullOrEmpty(_dbClient.DbClientErrorMessage))
-                IsReady = true;
-
-            else
+            if (IsDbStorageAvailable)
             {
-                if (!string.IsNullOrEmpty(_dbClient.DbClientErrorMessage))
-                    Messages.Add(_dbClient.DbClientErrorMessage);
+                // Assign Options
+                _fileStoreRoot = fileStoreRoot;
+                _filePrefix = filePrefix;
+                _useUniqueName = useUniqueRef;
+                _defaultStorage = defaultFileStore;
+                _maxVersions = maxVersions > 1 ? maxVersions : 1;
+                _boxConfig = boxConfig;
 
-                if (!string.IsNullOrEmpty(fileSystemErrorMessage))
-                    Messages.Add(fileSystemErrorMessage);
+                // Startup Clients
+                _uncClient = new FileSystemClient(_fileStoreRoot, _useUniqueName);
+                IsFileSystemAvailable = _uncClient.IsReady;
+
+                _boxClient = new BoxClient(boxConfig, _maxVersions);
+                IsBoxAvailable = _boxClient.IsReady;
             }
         }
         #endregion
@@ -250,6 +243,8 @@ namespace Netigent.Utils.FileStoreIO
         /// <inheritdoc/>
         public List<InternalFileModel> Files_GetAll(string mainGroup = "", string subGroup = "") => _dbClient.FileStore_GetAllByLocation(mainGroup, subGroup);
 
+        public List<InternalFileModel> Files_GetAll(string[] pathParts, char joinParts = '/') => _dbClient.FileStore_GetAllByLocation(pathParts: pathParts, joiningParts: joinParts);
+
         /// <inheritdoc/>
         public async Task<ResultModel> File_Migrate(string fileRef, FileStorageProvider newLocation)
         {
@@ -298,6 +293,94 @@ namespace Netigent.Utils.FileStoreIO
             }
 
             return new ResultModel { Success = overallStatus, Message = messages };
+        }
+
+        /// <inheritdoc/>
+        public async Task<ResultModel> File_IndexAllAsync(FileStorageProvider indexLocation)
+        {
+            if (indexLocation == FileStorageProvider.Database)
+            {
+                return new ResultModel
+                {
+                    Success = false,
+                    Message = new List<string> { "Database Location is not supported" },
+                };
+            }
+
+            else if (indexLocation == FileStorageProvider.Box && !IsBoxAvailable)
+            {
+                return new ResultModel
+                {
+                    Success = false,
+                    Message = new List<string> { "Box Provider is not available, please check config!" },
+                };
+            }
+
+            else if (indexLocation == FileStorageProvider.FileSystem && !IsFileSystemAvailable)
+            {
+                return new ResultModel
+                {
+                    Success = false,
+                    Message = new List<string> { "FileSystem Provider is not available, please check config!" },
+                };
+            }
+
+            // This could take a long time...
+            DateTime startTime = DateTime.Now;
+
+            fileIndex.CollectionChanged += FileIndex_CollectionChanged;
+
+            var listOfFiles = await IndexAllFilesAsync(indexLocation, fileIndex);
+            TimeSpan scanTime = DateTime.Now - startTime;
+
+            long addedFiles = 0;
+            if (listOfFiles?.Count > 0)
+            {
+                addedFiles = File_UpsertIndexAsync(fileIndex);
+            }
+
+            return new ResultModel { Success = true, Message = new List<string> { $"Indexed {addedFiles}x files in {indexLocation}, scaned in {scanTime.TotalMinutes}mins!" } };
+        }
+
+        private ObservableCollection<InternalFileModel> fileIndex = new();
+
+        private async Task<List<InternalFileModel>> IndexAllFilesAsync(FileStorageProvider indexingLocation, ObservableCollection<InternalFileModel> internalFiles)
+        {
+            if (indexingLocation != FileStorageProvider.Database)
+            {
+                // Pick the client based on where file is stored
+                var client = GetClient(indexingLocation);
+                if (client != null)
+                {
+
+                    await client.IndexContentsAsync(internalFiles);
+                }
+            }
+
+            return default;
+        }
+
+        private void FileIndex_CollectionChanged(object sender, System.Collections.Specialized.NotifyCollectionChangedEventArgs e)
+        {
+            switch (e.Action)
+            {
+                case System.Collections.Specialized.NotifyCollectionChangedAction.Reset:
+                    // InsertRange triggers a reset
+                    File_UpsertIndexAsync(fileIndex);
+                    break;
+                case System.Collections.Specialized.NotifyCollectionChangedAction.Add:
+                    // .Add triggers, add! :)
+                    File_UpsertIndexAsync(fileIndex);
+                    break;
+                case System.Collections.Specialized.NotifyCollectionChangedAction.Remove:
+                    break;
+                case System.Collections.Specialized.NotifyCollectionChangedAction.Replace:
+                    break;
+                case System.Collections.Specialized.NotifyCollectionChangedAction.Move:
+                    break;
+                default:
+                    break;
+            }
         }
         #endregion
 
@@ -379,6 +462,70 @@ namespace Netigent.Utils.FileStoreIO
             return string.Empty;
         }
 
+        private long File_UpsertIndexAsync(ObservableCollection<InternalFileModel> fileCollection)
+        {
+            long newIndexes = 0;
+            var indexcollection = fileCollection.ToList();
+
+            if(indexcollection?.LongCount() > 0)
+            {
+                foreach (var fileObject in indexcollection)
+                {
+                    // This is a legacy hack
+                    string[] groupParts = fileObject.MainGroup.Split('/');
+
+                    // if files exist with same name, extentsion and groups, then consider it the same file,
+                    // Its upto the write2file etc to store as versioned
+                    var existingFilesList = Files_GetAll(groupParts).Where(x =>
+                        x.Extension.Equals(fileObject.Extension, StringComparison.InvariantCultureIgnoreCase) &&
+                        x.Name.StartsWith(fileObject.Name, StringComparison.InvariantCultureIgnoreCase));
+
+                    // Have we got existing files?
+                    if (existingFilesList?.Count() > 0)
+                    {
+                        continue;
+                        fileObject.FileRef = existingFilesList.FirstOrDefault().FileRef;
+
+                        int maxFileId = 1;
+                        // Figure out highestId
+                        foreach (var existingFile in existingFilesList)
+                        {
+                            string[] parts = existingFile.Name.Split(new string[] { _versionFlag }, StringSplitOptions.RemoveEmptyEntries);
+                            if (parts.Length > 1)
+                            {
+                                _ = Int32.TryParse(s: parts[1], out int existingMaxId);
+                                if (existingMaxId >= maxFileId)
+                                {
+                                    maxFileId = existingMaxId + 1;
+                                }
+                            }
+
+                            //                     maxFileId = existingFile.VersionInfo + 1;
+
+                        }
+
+                        // Rewrite with version increment
+                        fileObject.Name = $"{fileObject.Name}{_versionFlag}{maxFileId}";
+
+                    }
+                    else
+                    {
+                        //Assign unique fileRef code
+                        fileObject.FileRef = FileStore_FindNewFileRef();
+                        long result = _dbClient.FileStore_Upsert(fileObject);
+                        if (result > 0)
+                        {
+                            newIndexes++;
+                        }
+                    }
+                }
+
+                fileCollection.Clear();
+            }
+   
+            return newIndexes;
+        }
+
         private string FileStore_FindNewFileRef()
         {
             // No existing files find a new Id
@@ -391,37 +538,14 @@ namespace Netigent.Utils.FileStoreIO
             return generatedFileRef;
         }
 
-        private bool Startup(out string fileSystemErrors)
+        private bool StartupCheck()
         {
-            if (string.IsNullOrEmpty(_fileStoreRoot))
-                FileSystemStorageAvailable = false;
-
-            //Test file to check access to the file system
-            string testFile = Path.Combine(_fileStoreRoot, "TestFile90u34gj93p4n3p9wcfp3h4pc9qf.txt");
-            try
+            if (_dbClient == null || !_dbClient.IsReady || !string.IsNullOrEmpty(_dbClient.DbClientErrorMessage))
             {
-
-                fileSystemErrors = string.Empty;
-                if (!Directory.Exists(_fileStoreRoot))
-                    Directory.CreateDirectory(_fileStoreRoot);
-
-                if (System.IO.File.Exists(testFile))
-                    System.IO.File.Delete(testFile);
-                else
-                {
-                    System.IO.File.CreateText(testFile).Dispose();
-                    System.IO.File.Delete(testFile);
-                }
-
-                FileSystemStorageAvailable = true;
-                return true;
+                throw new Exception("Database Not Available, Check Connection String");
             }
-            catch (Exception ex)
-            {
-                fileSystemErrors = ex.Message;
-                FileSystemStorageAvailable = false;
-                return false;
-            }
+
+            return true;
         }
 
         private IClient GetClient(int provider)
@@ -468,7 +592,7 @@ namespace Netigent.Utils.FileStoreIO
             // Pick the client based on target.
             FileStorageProvider saveTo = saveToLocation == FileStorageProvider.UseDefault ? _defaultStorage : saveToLocation;
 
-
+            fileModel.SizeInBytes = fileModel.Data?.LongLength ?? -1;
 
             if (saveTo != FileStorageProvider.Database)
             {
@@ -502,6 +626,8 @@ namespace Netigent.Utils.FileStoreIO
 
             return fileModel;
         }
+
+
 
         /// <summary>
         /// Removes the binary from the provider store.

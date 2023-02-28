@@ -1,4 +1,6 @@
 ﻿using Netigent.Utils.FileStoreIO.Models;
+using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.Threading.Tasks;
 
 namespace Netigent.Utils.FileStoreIO.Clients
@@ -12,5 +14,7 @@ namespace Netigent.Utils.FileStoreIO.Clients
         public Task<InternalFileModel> GetFileAsync(string filePath);
 
         public Task<bool> DeleteFileAsync(string filePath);
+
+        public Task IndexContentsAsync(ObservableCollection<InternalFileModel> indexList);
     }
 }

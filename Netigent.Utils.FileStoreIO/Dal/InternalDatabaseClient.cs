@@ -10,6 +10,8 @@ namespace Netigent.Utils.FileStoreIO.Dal
 	{
 		public string DbClientErrorMessage { get; private set; } = string.Empty;
 
+		public bool IsReady;
+
 		private readonly string _schemaName;
 		private string _managementConnection { get; }
 
@@ -18,7 +20,7 @@ namespace Netigent.Utils.FileStoreIO.Dal
 			_managementConnection = sqlManagementConnection;
 			_schemaName = schemaName;
 
-			InitializeDatabase(out string errorMessage);
+			IsReady = InitializeDatabase(out string errorMessage);
 			DbClientErrorMessage = errorMessage;
 		}
 
@@ -73,6 +75,18 @@ namespace Netigent.Utils.FileStoreIO.Dal
 							[MimeType] [varchar](250) NULL
 									
 							EXEC('UPDATE [{_schemaName}].[FileStoreIndex] SET [MimeType] = [MimeType]')
+						END
+
+						IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS where TABLE_NAME = 'FileStoreIndex' and TABLE_SCHEMA = '{_schemaName}' and COLUMN_NAME = 'MainGroup' and CHARACTER_MAXIMUM_LENGTH = 1200)
+						BEGIN
+							ALTER TABLE [{_schemaName}].[FileStoreIndex]
+							ALTER COLUMN [MainGroup] VARCHAR(1200)
+						END
+  
+						IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS where TABLE_NAME = 'FileStoreIndex' and TABLE_SCHEMA = '{_schemaName}' and COLUMN_NAME = 'SizeInBytes')
+						BEGIN
+							ALTER TABLE [{_schemaName}].[FileStoreIndex]
+							ADD [SizeInBytes] BIGINT
 						END";
 
 				var schemaResult = ExecuteQuery(schemaExists, null);

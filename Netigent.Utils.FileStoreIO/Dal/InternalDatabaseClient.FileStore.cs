@@ -7,6 +7,24 @@ namespace Netigent.Utils.FileStoreIO.Dal
 {
     public partial class InternalDatabaseClient
     {
+        internal List<InternalFileModel> FileStore_GetAllByLocation(string[] pathParts, char joiningParts = '/')
+        {
+            // WARNING: Never getdata from here, file could be stored in DB, will kill performancc
+            string queryDef = $@"
+                                SELECT [Created], [Description], [Extension], [FileRef], [MimeType], [Id], [Modified], [Name], [UploadedBy], [FileLocation], [MainGroup], [SubGroup]
+								FROM [{_schemaName}].[FileStoreIndex]
+								WHERE
+								(
+									-- MainGroup is PathType i.e. HR/Training/Sales, would get HR/Training/Sales/John + Mary etc
+									IsNull([MainGroup],'') + '/' + IsNull([SubGroup],'') like @PathParts + '%'
+								)";
+
+            var queryParms = new DynamicParameters();
+            queryParms.Add("@PathParts", string.Join(joiningParts.ToString(), pathParts));
+
+            return RunQueryToList<InternalFileModel>(queryDef, queryParms);
+        }
+
         /// <summary>
         /// Get By MainGroup and SubGroup as List<FileStore>
         /// </summary>
@@ -16,10 +34,16 @@ namespace Netigent.Utils.FileStoreIO.Dal
         internal List<InternalFileModel> FileStore_GetAllByLocation(string mainGroup = "", string subGroup = "")
         {
             // WARNING: Never getdata from here, file could be stored in DB, will kill performancc
-            string queryDef = $@"SELECT [Created], [Description], [Extension], [FileRef], [MimeType], [Id], [Modified], [Name], [UploadedBy], [FileLocation], [MainGroup], [SubGroup]
-										FROM [{_schemaName}].[FileStoreIndex]
-										WHERE (@MainGroup = '' OR IsNull([MainGroup],'') = @MainGroup)
-										AND (@SubGroup = '' OR IsNull([SubGroup],'') = @SubGroup)";
+            string queryDef = $@"
+                                SELECT [Created], [Description], [Extension], [FileRef], [MimeType], [Id], [Modified], [Name], [UploadedBy], [FileLocation], [MainGroup], [SubGroup]
+								FROM [{_schemaName}].[FileStoreIndex]
+								WHERE
+								(
+									--Main Group / SubGroup Filter
+									(@MainGroup = '' OR IsNull([MainGroup],'') = @MainGroup)
+									AND 
+									(@SubGroup = '' OR IsNull([SubGroup],'') = @SubGroup)
+								)";
 
             var queryParms = new DynamicParameters();
             queryParms.Add("@MainGroup", mainGroup);
@@ -150,6 +174,7 @@ namespace Netigent.Utils.FileStoreIO.Dal
             queryParms.Add("@FileLocation", model.FileLocation);
             queryParms.Add("@MainGroup", model.MainGroup);
             queryParms.Add("@FileTypeGroup", model.SubGroup);
+            queryParms.Add("@SizeInBytes", model.SizeInBytes);
 
 
 
@@ -169,6 +194,7 @@ namespace Netigent.Utils.FileStoreIO.Dal
 											,[FileLocation] = @FileLocation
 											,[MainGroup] = @MainGroup
 											,[SubGroup] = @FileTypeGroup
+	                                        ,[SizeInBytes] = @SizeInBytes
 
 										WHERE [Id] = @Id";
 
@@ -178,11 +204,11 @@ namespace Netigent.Utils.FileStoreIO.Dal
             else
             {
                 string queryDef = $@"INSERT INTO [{_schemaName}].[FileStoreIndex](
-											[Created], [Data], [Description], [Extension], [FilePath], [FileRef], [MimeType], [Modified], [Name], [UploadedBy], [FileLocation], [MainGroup], [SubGroup]
+											[Created], [Data], [Description], [Extension], [FilePath], [FileRef], [MimeType], [Modified], [Name], [UploadedBy], [FileLocation], [MainGroup], [SubGroup], [SizeInBytes]
 										)
 										OUTPUT INSERTED.[Id]
 										VALUES(
-											@Created, @Data, @Description, @Extension, @FilePath, @FileRef, @MimeType, @Modified, @Name, @UploadedBy,@FileLocation, @MainGroup, @FileTypeGroup
+											@Created, @Data, @Description, @Extension, @FilePath, @FileRef, @MimeType, @Modified, @Name, @UploadedBy,@FileLocation, @MainGroup, @FileTypeGroup, @SizeInBytes
 										)";
 
                 return RunQuery<long>(queryDef, queryParms);
