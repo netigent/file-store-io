@@ -2,7 +2,6 @@
 using System.IO;
 using System;
 using System.Threading.Tasks;
-using System.Collections.Generic;
 using System.Collections.ObjectModel;
 
 namespace Netigent.Utils.FileStoreIO.Clients
@@ -29,29 +28,32 @@ namespace Netigent.Utils.FileStoreIO.Clients
         #region ctor
         public FileSystemClient(string rootFolder, bool useUniqueNames)
         {
-            _fileStoreRoot = rootFolder;
-            _useUniqueNames = useUniqueNames;
-
-            //Test file to check access to the file system
-            string testFile = Path.Combine(_fileStoreRoot, TestFile);
-            try
+            if (!string.IsNullOrEmpty(rootFolder))
             {
-                if (!Directory.Exists(_fileStoreRoot))
-                    Directory.CreateDirectory(_fileStoreRoot);
+                _fileStoreRoot = rootFolder;
+                _useUniqueNames = useUniqueNames;
 
-                if (System.IO.File.Exists(testFile))
-                    System.IO.File.Delete(testFile);
-                else
+                //Test file to check access to the file system
+                string testFile = Path.Combine(_fileStoreRoot, TestFile);
+                try
                 {
-                    System.IO.File.CreateText(testFile).Dispose();
-                    System.IO.File.Delete(testFile);
-                }
+                    if (!Directory.Exists(_fileStoreRoot))
+                        Directory.CreateDirectory(_fileStoreRoot);
 
-                IsReady = true;
-            }
-            catch
-            {
-                IsReady = false;
+                    if (System.IO.File.Exists(testFile))
+                        System.IO.File.Delete(testFile);
+                    else
+                    {
+                        System.IO.File.CreateText(testFile).Dispose();
+                        System.IO.File.Delete(testFile);
+                    }
+
+                    IsReady = true;
+                }
+                catch
+                {
+                    IsReady = false;
+                }
             }
         }
         #endregion

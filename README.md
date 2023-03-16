@@ -174,6 +174,8 @@ Initially thanks for considering using this library - we hope that it gives you 
 In terms of using the Library the following should get you up and running quickly
 
 # Version Changes
+**1.0.11** Fixing ctor for BoxClient and FileSystem clients, encase appSettings etc for Box are null
+
 **1.0.9** Missing Prop in DI / appSettings for default Storage, updating ReadMe example for "Using Dependency Injection"
 
 **1.0.8** Support for Box Storage (>50MB files not yet supported will be in next version), Migrate File function (keep file references and relocate the binary to new location), default Provider

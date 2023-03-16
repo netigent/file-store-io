@@ -17,7 +17,6 @@ using System.Linq;
 using Netigent.Utils.FileStoreIO.Enum;
 using Netigent.Utils.FileStoreIO.Helpers;
 using System.Collections.ObjectModel;
-using System.ComponentModel;
 using Netigent.Utils.FileStoreIO.Extensions;
 
 namespace Netigent.Utils.FileStoreIO.Clients
@@ -52,52 +51,57 @@ namespace Netigent.Utils.FileStoreIO.Clients
                 ? maxVersions
                 : 1;
 
-            // Next, we use BouncyCastle's PemReader to read the 
-            // decrypt the private key into a RsaPrivateCrtKeyParameters
-            // object
-            var appAuth = config.BoxAppSettings.AppAuth;
-            var stringReader = new StringReader(appAuth.PrivateKey);
-            var passwordFinder = new PasswordFinder(appAuth.Passphrase);
-            var pemReader = new PemReader(stringReader, passwordFinder);
-            var keyParams = (RsaPrivateCrtKeyParameters)pemReader.ReadObject();
-
-            // In the end, we will use this key in the next steps
-            _rsa = CreateRSAProvider(ToRSAParameters(keyParams));
-            this._config = config;
-
-            // Make the POST call to the authentication endpoint
-            _boxClient = new HttpClient();
-            _boxClient.Timeout = new TimeSpan(0, _config.TimeoutInMins, 0);
-
-            // Startup the client and get ID etc
-            _ = PreflightChecks().Result;
-
-            if(IsReady)
+            if (config != null && !string.IsNullOrEmpty(config?.EnterpriseID))
             {
-                // Attempt inital convertToLong
-                long potentialRootId = AsLong(config.RootFolder);
+                _config = config;
 
-                if(!string.IsNullOrEmpty(config.RootFolder) && potentialRootId == -1)
+                // Next, we use BouncyCastle's PemReader to read the 
+                // decrypt the private key into a RsaPrivateCrtKeyParameters
+                // object
+                var appAuth = _config.BoxAppSettings.AppAuth;
+                var stringReader = new StringReader(appAuth.PrivateKey);
+                var passwordFinder = new PasswordFinder(appAuth.Passphrase);
+                var pemReader = new PemReader(stringReader, passwordFinder);
+                var keyParams = (RsaPrivateCrtKeyParameters)pemReader.ReadObject();
+
+                // In the end, we will use this key in the next steps
+                _rsa = CreateRSAProvider(ToRSAParameters(keyParams));
+
+
+                // Make the POST call to the authentication endpoint
+                _boxClient = new HttpClient();
+                _boxClient.Timeout = new TimeSpan(0, _config.TimeoutInMins, 0);
+
+                // Startup the client and get ID etc
+                _ = PreflightChecks().Result;
+
+                if (IsReady)
                 {
-                    // We're dealing with a string based rootName
-                    long resolvedId = ResolveId(folderName: config.RootFolder, parentId: 0, autoCreate: config.AutoCreateRoot ).Result;
-                    if(resolvedId == -1)
+                    // Attempt inital convertToLong
+                    long potentialRootId = AsLong(_config.RootFolder);
+
+                    if (!string.IsNullOrEmpty(_config.RootFolder) && potentialRootId == -1)
                     {
-                        // Root Folder is string, but not found and autoCreate was false...
-                        IsReady = false;
-                        return;
-                    }
+                        // We're dealing with a string based rootName
+                        long resolvedId = ResolveId(folderName: _config.RootFolder, parentId: 0, autoCreate: _config.AutoCreateRoot).Result;
+                        if (resolvedId == -1)
+                        {
+                            // Root Folder is string, but not found and autoCreate was false...
+                            IsReady = false;
+                            return;
+                        }
 
-                    // String named root found and id resolved
-                    _rootId = resolvedId;
-                }
-                else if (potentialRootId >= 0 )
-                {
-                    _rootId = potentialRootId;
-                }
-                else
-                {
-                    _rootId = 0;
+                        // String named root found and id resolved
+                        _rootId = resolvedId;
+                    }
+                    else if (potentialRootId >= 0)
+                    {
+                        _rootId = potentialRootId;
+                    }
+                    else
+                    {
+                        _rootId = 0;
+                    }
                 }
             }
         }
