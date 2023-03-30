@@ -11,7 +11,7 @@ namespace Netigent.Utils.FileStoreIO.Models
         public string DatabaseSchema { get; set; } = "fileStore";
         public bool StoreFileAsUniqueRef { get; set; } = false;
         public int MaxVersions { get; set; } = 1;
-        public FileStorageProvider DefaultStorage { get; set; } = FileStorageProvider.UseDefault;
+        public FileStorageProvider DefaultStorage { get; set; } = FileStorageProvider.Database;
         public BoxConfig? Box { get; set; }
 
     }

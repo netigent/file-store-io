@@ -6,7 +6,7 @@ Initially thanks for considering using this library - we hope that it gives you 
 In terms of using the Library the following should get you up and running quickly
 
 # Version Changes
-**1.0.12** Default Provider and contrstuctor logic enhancement.
+**1.0.13** If the appSettings / DefaultStorage, it will default to Database.
 
 **1.0.10** Support for indexing existing Box Storage account (still to come FileStore Indexing and >50MB files in Box). New field sizeInBytes for the file.
 
