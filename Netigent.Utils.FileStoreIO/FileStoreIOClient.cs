@@ -8,7 +8,6 @@ using Netigent.Utils.FileStoreIO.Models;
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
-using System.ComponentModel;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
@@ -55,7 +54,6 @@ namespace Netigent.Utils.FileStoreIO
             {
                 // Assign Options
                 _fileStoreRoot = fileIOConfig.Value.FileStoreRoot;
-                _defaultStorage = fileIOConfig.Value.DefaultStorage;
                 _filePrefix = fileIOConfig.Value.FilePrefix ?? _notSpecifiedFlag;
                 _useUniqueName = fileIOConfig.Value.StoreFileAsUniqueRef;
                 _maxVersions = fileIOConfig.Value.MaxVersions > 1 ? fileIOConfig.Value.MaxVersions : 1;
@@ -65,7 +63,13 @@ namespace Netigent.Utils.FileStoreIO
                 _uncClient = new FileSystemClient(_fileStoreRoot, _useUniqueName);
                 IsFileSystemAvailable = _uncClient.IsReady;
 
-                _boxClient = new BoxClient(_boxConfig, _maxVersions);
+				_defaultStorage = fileIOConfig.Value.DefaultStorage != FileStorageProvider.UseDefault
+                    ? fileIOConfig.Value.DefaultStorage
+                    : IsFileSystemAvailable
+						? FileStorageProvider.FileSystem
+                        : FileStorageProvider.Database;
+
+				_boxClient = new BoxClient(_boxConfig, _maxVersions);
                 IsBoxAvailable = _boxClient.IsReady;
             }
         }
