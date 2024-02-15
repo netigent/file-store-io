@@ -19,7 +19,7 @@ jobs:
     - name: Restore dependencies
       run: dotnet restore
     - name: Build
-      run: dotnet build  Netigent.Utils.FileStoreIO/Netigent.Utils.FileStoreIO.csproj --configuration Release --no-restore
+      run: dotnet build --configuration Release --no-restore
       
     #Publish to Nuget.org
     - name: Publish Netigent.Utils.FileStoreIO
