@@ -31,6 +31,6 @@ namespace Netigent.Utils.FileStoreIO.Clients
 
         public Task<bool> DeleteFileAsync(string extClientRef);
 
-        public Task<long> IndexContentsAsync(ObservableCollection<InternalFileModel> indexList, string indexFolderPath, bool scopeToAppFolder);
+        public Task<long> IndexContentsAsync(ObservableCollection<InternalFileModel> indexList, string indexPathTags, bool scopeToAppFolder);
     }
 }

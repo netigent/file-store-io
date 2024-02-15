@@ -89,7 +89,7 @@ namespace Netigent.Utils.FileStoreIO.Clients.FileSystem
             }
 
             // Ensure folder exists
-            string absoluteFolder = AsAbsolutePath(fileModel.FolderPath
+            string absoluteFolder = AsAbsolutePath(fileModel.PathTags
                 .SetPathSeparator(ClientDirectoryChar) // Replace all / | \ with \
                 .SafeFilename(replaceForbiddenFilenameChar: '_', allowExtendedAscii: true, ignorePathSeperators: new[] { ClientDirectoryChar }));
 
@@ -173,12 +173,12 @@ namespace Netigent.Utils.FileStoreIO.Clients.FileSystem
             return Task.FromResult(true);
         }
 
-        public async Task<long> IndexContentsAsync(ObservableCollection<InternalFileModel> indexList, string indexFolderPath, bool scopeToAppFolder)
+        public async Task<long> IndexContentsAsync(ObservableCollection<InternalFileModel> indexList, string indexPathTags, bool scopeToAppFolder)
         {
             // Should we prepend AppCodePrefix
-            string searchingPath = scopeToAppFolder && PathExtension.IsRelativePath(indexFolderPath)
-                ? AppCodePrefix + ClientDirectoryChar.ToString() + indexFolderPath
-                : indexFolderPath;
+            string searchingPath = scopeToAppFolder && PathExtension.IsRelativePath(indexPathTags)
+                ? AppCodePrefix + ClientDirectoryChar.ToString() + indexPathTags
+                : indexPathTags;
 
             IList<InternalFileModel> output = await IndexFolderAsync(AsAbsolutePath(searchingPath));
             if (output.Count > 0)
@@ -189,10 +189,10 @@ namespace Netigent.Utils.FileStoreIO.Clients.FileSystem
             return output.Count;
         }
 
-        private async Task<IList<InternalFileModel>> IndexFolderAsync(string currentFolderPath)
+        private async Task<IList<InternalFileModel>> IndexFolderAsync(string currentPathTags)
         {
             List<InternalFileModel> output = new();
-            var contents = new DirectoryInfo(currentFolderPath);
+            var contents = new DirectoryInfo(currentPathTags);
             if (contents.Exists)
             {
                 foreach (var folderItem in contents.GetDirectories())
@@ -213,7 +213,7 @@ namespace Netigent.Utils.FileStoreIO.Clients.FileSystem
                         Modified = fileItem.LastWriteTimeUtc,
                         Extension = filePathInfo.FileExtension,
                         FileLocation = (int)FileStorageProvider.FileSystem,
-                        FolderPath = filePathInfo.FolderPath,
+                        PathTags = filePathInfo.PathTags,
                         MimeType = filePathInfo.MimeType,
                         SizeInBytes = fileItem.Length,
                     });

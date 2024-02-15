@@ -98,14 +98,10 @@ namespace Netigent.Utils.FileStoreIO.Dal
                         IF NOT EXISTS (select 1 from INFORMATION_SCHEMA.COLUMNS where TABLE_SCHEMA = '{_schemaName}' and TABLE_NAME = 'FileStoreIndex' and COLUMN_NAME = 'ExtClientRef')
 							BEGIN
 								ALTER TABLE [{_schemaName}].[FileStoreIndex] ADD
-								[FolderPath] [varchar](1024) NULL;
+								[PathTags] [varchar](1024) NULL;
 							
 								EXEC('UPDATE [{_schemaName}].[FileStoreIndex]
-                                      SET [FolderPath] = REPLACE(''/'' + IsNull([MainGroup], '''') + ''/'' + IsNull([SubGroup], '''') + ''/'', ''//'', ''/'')');
-
-								ALTER TABLE [{_schemaName}].[FileStoreIndex] DROP COLUMN
-								[MainGroup],
-								[SubGroup];
+                                      SET [PathTags] = REPLACE(''/'' + IsNull([MainGroup], '''') + ''/'' + IsNull([SubGroup], '''') + ''/'', ''//'', ''/'')');
 
                                 EXEC sp_rename '{_schemaName}.FileStoreIndex.FilePath', 'ExtClientRef', 'COLUMN';
 							END

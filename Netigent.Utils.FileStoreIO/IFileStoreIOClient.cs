@@ -14,6 +14,16 @@ namespace Netigent.Utils.FileStoreIO
         /// </summary>
         bool IsReady { get; }
 
+        /// <summary>
+        /// What is the current AppPrefix if any?
+        /// </summary>
+        string AppPrefix { get; }
+
+        /// <summary>
+        /// To join paths, what is the internal path separator?
+        /// </summary>
+        char PathSeperator { get; }
+
         bool IsClientAvailable(FileStorageProvider fileStorageProvider);
 
         /// <summary>

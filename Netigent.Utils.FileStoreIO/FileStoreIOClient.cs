@@ -27,6 +27,10 @@ namespace Netigent.Utils.FileStoreIO
 
         public bool IsReady { get; set; } = false;
 
+        public char PathSeperator => SystemConstants.InternalDirectorySeparator;
+
+        public string AppPrefix => _appPrefix ?? string.Empty;
+
         private readonly InternalDatabaseClient _dbClient;
         private readonly string _filePrefix;
         private readonly string _appPrefix;
@@ -48,14 +52,15 @@ namespace Netigent.Utils.FileStoreIO
         public FileStoreIOClient(IOptions<FileStoreIOConfig> fileIOConfig)
         {
             _dbClient = new InternalDatabaseClient(fileIOConfig.Value.Database, fileIOConfig.Value.DatabaseSchema);
+            _filePrefix = fileIOConfig.Value.FilePrefix ?? _notSpecifiedFlag;
+            _appPrefix = fileIOConfig.Value.AppPrefix ?? string.Empty;
+            _maxVersions = fileIOConfig.Value.MaxVersions > 1 ? fileIOConfig.Value.MaxVersions : 1;
+
             IsReady = Internal_StartupCheck();
 
             if (IsReady)
             {
-                // Assign Options
-                _filePrefix = fileIOConfig.Value.FilePrefix ?? _notSpecifiedFlag;
-                _appPrefix = fileIOConfig.Value.AppPrefix ?? string.Empty;
-                _maxVersions = fileIOConfig.Value.MaxVersions > 1 ? fileIOConfig.Value.MaxVersions : 1;
+
 
                 StoreProvidersList.Add(new StoreProviderDef(fileIOConfig.Value.FileSystem, _maxVersions, _appPrefix));
                 StoreProvidersList.Add(new StoreProviderDef(fileIOConfig.Value.S3, _maxVersions, _appPrefix));
@@ -84,23 +89,20 @@ namespace Netigent.Utils.FileStoreIO
         {
             //Create the filestore client
             _dbClient = new InternalDatabaseClient(databaseConnection, dbSchema);
+            _filePrefix = filePrefix;
+            _maxVersions = maxVersions > 1 ? maxVersions : 1;
+            _appPrefix = appPrefix ?? string.Empty;
+            _defaultStorage = defaultFileStore != FileStorageProvider.UseDefault
+                ? defaultFileStore
+                : FileStorageProvider.Database;
 
             IsReady = Internal_StartupCheck();
 
             if (IsReady)
             {
-                // Assign Options
-                _filePrefix = filePrefix;
-                _maxVersions = maxVersions > 1 ? maxVersions : 1;
-                _appPrefix = appPrefix ?? string.Empty;
-
                 StoreProvidersList.Add(new StoreProviderDef(fileSystemConfig, _maxVersions, _appPrefix));
                 StoreProvidersList.Add(new StoreProviderDef(s3Config, _maxVersions, _appPrefix));
                 StoreProvidersList.Add(new StoreProviderDef(boxConfig, _maxVersions, _appPrefix));
-
-                _defaultStorage = defaultFileStore != FileStorageProvider.UseDefault
-                    ? defaultFileStore
-                    : FileStorageProvider.Database;
             }
         }
         #endregion
@@ -128,7 +130,7 @@ namespace Netigent.Utils.FileStoreIO
                 Name = pathInfo.FilenameNoExtension,
                 Description = description ?? pathInfo.FilenameNoExtension,
                 FileLocation = fileStorageProvider == FileStorageProvider.UseDefault ? (int)_defaultStorage : (int)fileStorageProvider,
-                FolderPath = pathInfo.FolderPath,
+                PathTags = pathInfo.PathTags,
                 ExtClientRef = relationalFilePathAndName,
                 Data = fileContents,
             };
@@ -149,7 +151,7 @@ namespace Netigent.Utils.FileStoreIO
                 Name = fileName,
                 Description = description ?? fileName,
                 FileLocation = fileStorageProvider == FileStorageProvider.UseDefault ? (int)_defaultStorage : (int)fileStorageProvider,
-                FolderPath = relationalFilePathAndName,
+                PathTags = relationalFilePathAndName,
             };
 
             using (var dataStream = new MemoryStream())
@@ -400,6 +402,7 @@ namespace Netigent.Utils.FileStoreIO
         }
 
         private long NewlyAddedFiles { get; set; } = 0;
+
         /// <inheritdoc />
         private ObservableCollection<InternalFileModel> fileIndex = new();
 
@@ -448,7 +451,7 @@ namespace Netigent.Utils.FileStoreIO
 
             // if files exist with same name, extension and fullFilePath, then consider it the same file,
             // Its upto the write2file etc to store as versioned
-            var existingFilesList = Files_GetAll(fileObject.FolderPath.SetPathSeparator(SystemConstants.InternalDirectorySeparator)).Where(x =>
+            var existingFilesList = Files_GetAll(fileObject.PathTags.SetPathSeparator(SystemConstants.InternalDirectorySeparator)).Where(x =>
                 x.Extension.Equals(fileObject.Extension, StringComparison.InvariantCultureIgnoreCase) &&
                 x.Name.StartsWith(fileObject.Name, StringComparison.InvariantCultureIgnoreCase));
 
@@ -522,7 +525,7 @@ namespace Netigent.Utils.FileStoreIO
                 {
                     // if files exist with same name, extentsion and groups, then consider it the same file,
                     // Its upto the write2file etc to store as versioned
-                    var existingFilesList = Files_GetAllV2(fileRecord.FolderPath).Where(x =>
+                    var existingFilesList = Files_GetAllV2(fileRecord.PathTags).Where(x =>
                         x.Extension.Equals(fileRecord.Extension, StringComparison.InvariantCultureIgnoreCase) &&
                         x.Name.StartsWith(fileRecord.Name, StringComparison.InvariantCultureIgnoreCase));
 

@@ -39,14 +39,14 @@ namespace Netigent.Utils.FileStoreIO.Dal
 	                    [Modified],
 	                    [UploadedBy],
 	                    [FileLocation],
-	                    [FolderPath],
+	                    [PathTags],
 	                    [ExtClientRef],
                         [SizeInBytes]
                     FROM [{_schemaName}].[FileStoreIndex]
                     WHERE
                     (
 	                    -- MainGroup is PathType i.e. HR/Training/Sales, would get HR/Training/Sales/John + Mary etc
-	                    REPLACE(CONCAT(@pathSep, IsNull([FolderPath],''),@pathSep, [Name], Extension),CONCAT(@pathSep,@pathSep),@pathSep)
+	                    REPLACE(CONCAT(@pathSep, IsNull([PathTags],''),@pathSep, [Name], Extension),CONCAT(@pathSep,@pathSep),@pathSep)
 	                    LIKE
 	                    REPLACE(CONCAT(@pathSep, @PathToSearch),CONCAT(@pathSep,@pathSep),@pathSep) + '%'
                     )";
@@ -77,7 +77,7 @@ namespace Netigent.Utils.FileStoreIO.Dal
 	                    [Modified],
 	                    [UploadedBy],
 	                    [FileLocation],
-	                    [FolderPath],
+	                    [PathTags],
 	                    [ExtClientRef],
                         [SizeInBytes]
 					FROM [{_schemaName}].[FileStoreIndex]
@@ -109,7 +109,7 @@ namespace Netigent.Utils.FileStoreIO.Dal
 	                    [Modified],
 	                    [UploadedBy],
 	                    [FileLocation],
-	                    [FolderPath],
+	                    [PathTags],
 	                    [ExtClientRef],
                         [SizeInBytes],
                         [Data]
@@ -141,7 +141,7 @@ namespace Netigent.Utils.FileStoreIO.Dal
 	                    [Modified],
 	                    [UploadedBy],
 	                    [FileLocation],
-	                    [FolderPath],
+	                    [PathTags],
 	                    [ExtClientRef],
                         [SizeInBytes],
                         [Data]
@@ -223,7 +223,7 @@ namespace Netigent.Utils.FileStoreIO.Dal
             queryParms.Add("@Name", model.Name);
             queryParms.Add("@UploadedBy", model.UploadedBy);
             queryParms.Add("@FileLocation", model.FileLocation);
-            queryParms.Add("@FolderPath", model.FolderPath.SetPathSeparator(SystemConstants.InternalDirectorySeparator));
+            queryParms.Add("@PathTags", model.PathTags.SetPathSeparator(SystemConstants.InternalDirectorySeparator));
             queryParms.Add("@SizeInBytes", model.SizeInBytes);
 
             if (existingRecord != null && existingRecord.Id != default)
@@ -241,7 +241,7 @@ namespace Netigent.Utils.FileStoreIO.Dal
 	                    ,[Name] = @Name
 	                    ,[UploadedBy] = @UploadedBy
 	                    ,[FileLocation] = @FileLocation
-	                    ,[FolderPath] = @FolderPath
+	                    ,[PathTags] = @PathTags
 	                    ,[SizeInBytes] = @SizeInBytes
 
                     WHERE [Id] = @Id";
@@ -265,7 +265,7 @@ namespace Netigent.Utils.FileStoreIO.Dal
 	                    ,[Name]
 	                    ,[UploadedBy]
 	                    ,[FileLocation]
-	                    ,[FolderPath]
+	                    ,[PathTags]
 	                    ,[SizeInBytes]
                     )
                     OUTPUT INSERTED.[Id]
@@ -282,7 +282,7 @@ namespace Netigent.Utils.FileStoreIO.Dal
 	                    ,@Name
 	                    ,@UploadedBy
 	                    ,@FileLocation
-	                    ,@FolderPath
+	                    ,@PathTags
 	                    ,@SizeInBytes
                     )";
 

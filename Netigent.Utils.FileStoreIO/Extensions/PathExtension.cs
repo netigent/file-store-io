@@ -9,7 +9,7 @@ namespace Netigent.Utils.FileStoreIO.Extensions
 {
     public class PathInfo
     {
-        public string FolderPath { get; set; } = string.Empty;
+        public string PathTags { get; set; } = string.Empty;
 
         public char PathSeperator { get; set; } = Path.DirectorySeparatorChar;
 
@@ -41,7 +41,7 @@ namespace Netigent.Utils.FileStoreIO.Extensions
 
             var cleanRoot = removeRootFolderPrefix.TrimEnd(new char[] { '\\', '|', '/' });
 
-            string folderPath = cleanRoot?.Length > 0 && relativeFileLocation.StartsWith(cleanRoot)
+            string PathTags = cleanRoot?.Length > 0 && relativeFileLocation.StartsWith(cleanRoot)
                 ? pathOnly.Replace(cleanRoot, "").DropFirstChar(new char[] { '\\', '|', '/' })
                 : pathOnly;
 
@@ -51,7 +51,7 @@ namespace Netigent.Utils.FileStoreIO.Extensions
 
             return new PathInfo
             {
-                FolderPath = folderPath,
+                PathTags = PathTags,
                 PathSeperator = pathSeperatorSymbol,
                 FileExtension = extension,
                 MimeType = MimeHelper.GetMimeType(extension),
@@ -75,7 +75,7 @@ namespace Netigent.Utils.FileStoreIO.Extensions
         public static PathInfo GetPathInfo(this InternalFileModel fileModel, char? usePathSeparator = null)
         {
             char pathSeperatorSymbol = usePathSeparator ?? Path.DirectorySeparatorChar;
-            var relativeFileLocation = Path.Combine(fileModel.FolderPath, fileModel.Name + fileModel.Extension).SetPathSeparator(pathSeperatorSymbol);
+            var relativeFileLocation = Path.Combine(fileModel.PathTags, fileModel.Name + fileModel.Extension).SetPathSeparator(pathSeperatorSymbol);
 
             var fileName = Path.GetFileNameWithoutExtension(relativeFileLocation);
             var extension = Path.GetExtension(relativeFileLocation);
@@ -83,7 +83,7 @@ namespace Netigent.Utils.FileStoreIO.Extensions
 
             return new PathInfo
             {
-                FolderPath = pathOnly.TrimEnd(new char[] { '\\', '|', '/' }),
+                PathTags = pathOnly.TrimEnd(new char[] { '\\', '|', '/' }),
                 PathSeperator = pathSeperatorSymbol,
                 FileExtension = extension,
                 MimeType = MimeHelper.GetMimeType(extension),
@@ -118,7 +118,7 @@ namespace Netigent.Utils.FileStoreIO.Extensions
                     .Replace("[UNC_FLAG]", _networkFlag);
         }
 
-        private static string[] SplitToTags(this string filePath)
+        public static string[] SplitToTags(this string filePath)
         {
             return filePath.Split(new char[] { '\\', '|', '/' }, StringSplitOptions.RemoveEmptyEntries);
         }

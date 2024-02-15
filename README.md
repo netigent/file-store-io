@@ -6,7 +6,9 @@ Initially thanks for considering using this library - we hope that it gives you 
 In terms of using the Library the following should get you up and running quickly
 
 # Version Changes
-**1.1.01** Added Support for AWS S3 Bucket Storage, upgraded code to .net 7 and .net Standard 2.0, some methods have been marked as Obsolete and have been repointed to newer methods. Older versions are still working, but try and swap.
+**1.1.2** Added Legacy MainGroup, SubGroup helpers onto InternalFileModel, also added helper Properties onto the client AppPrefix and PathSeperator
+
+**1.1.1** Added Support for AWS S3 Bucket Storage, upgraded code to .net 7 and .net Standard 2.0, some methods have been marked as Obsolete and have been repointed to newer methods. Older versions are still working, but try and swap.
 
 **1.0.14** Upgraded Bounycastle dependencies.
 

@@ -1,3 +1,4 @@
+using Netigent.Utils.FileStoreIO.Extensions;
 using System;
 using System.Linq;
 
@@ -27,6 +28,26 @@ namespace Netigent.Utils.FileStoreIO.Models
             {
                 return Name.Split(new string[] { _versionFlag }, StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() + Extension;
             }
+        }
+
+        public string MainGroup(string appPrefix)
+        {
+            string[] pathTags = PathTags.SplitToTags();
+            bool hasAppPrefix = pathTags.Length > 0 && pathTags[0].Equals(appPrefix, StringComparison.InvariantCultureIgnoreCase);
+
+            return hasAppPrefix
+                ? pathTags[1] ?? string.Empty
+                : pathTags[0] ?? string.Empty;
+        }
+
+        public string SubGroup(string appPrefix)
+        {
+            string[] pathTags = PathTags.SplitToTags();
+            bool hasAppPrefix = pathTags.Length > 0 && pathTags[0].Equals(appPrefix, StringComparison.InvariantCultureIgnoreCase);
+
+            return hasAppPrefix
+                ? pathTags[2] ?? string.Empty
+                : pathTags[1] ?? string.Empty;
         }
 
         public int VersionInfo
@@ -66,7 +87,7 @@ namespace Netigent.Utils.FileStoreIO.Models
             Modified = model.Modified;
             FileLocation = model.FileLocation;
             SizeInBytes = model.SizeInBytes;
-            FolderPath = model.FolderPath;
+            PathTags = model.PathTags;
         }
         #endregion
 
@@ -79,9 +100,9 @@ namespace Netigent.Utils.FileStoreIO.Models
         public string Extension { get; set; }
 
         /// <summary>
-        /// FolderPath e.g. /4521/SignedInvoice/, /839, /myFolder/mySubFolder/
+        /// PathTags e.g. MyAppPrefix|RecordId|Category|Id 
         /// </summary>
-        public string FolderPath { get; set; }
+        public string PathTags { get; set; }
 
         /// <summary>
         /// 3rd Party Path, e.g. Box {Fileid}/{RevisionId} 1185335280675/1291996203075, AWS-S3 /myFolder/subFolder/subFolder/myfile.pdf

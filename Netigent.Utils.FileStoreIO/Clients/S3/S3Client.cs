@@ -78,12 +78,12 @@ namespace Netigent.Utils.FileStoreIO.Clients.S3
         #endregion
 
         #region Implementation
-        public async Task<long> IndexContentsAsync(ObservableCollection<InternalFileModel> indexList, string indexFolderPath, bool scopeToAppFolder)
+        public async Task<long> IndexContentsAsync(ObservableCollection<InternalFileModel> indexList, string indexPathTags, bool scopeToAppFolder)
         {
             // Should we prepend AppCodePrefix
             string searchingPath = scopeToAppFolder
-                ? AppCodePrefix + ClientDirectoryChar.ToString() + indexFolderPath
-                : indexFolderPath;
+                ? AppCodePrefix + ClientDirectoryChar.ToString() + indexPathTags
+                : indexPathTags;
 
             IList<InternalFileModel> output = await GetPageAsync(searchingPath, null);
 
@@ -197,7 +197,7 @@ namespace Netigent.Utils.FileStoreIO.Clients.S3
                         Name = fileInfo.FilenameNoExtension,
                         Description = string.Empty,
                         ExtClientRef = s3Object.Key, // Ensure to take key as-is
-                        FolderPath = fileInfo.FolderPath,
+                        PathTags = fileInfo.PathTags,
                         Created = s3Object.LastModified,
                         Modified = s3Object.LastModified,
                         Extension = fileInfo.FileExtension,
