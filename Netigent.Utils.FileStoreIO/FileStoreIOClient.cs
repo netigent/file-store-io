@@ -51,17 +51,14 @@ namespace Netigent.Utils.FileStoreIO
         /// <param name="fileIOConfig"></param>
         public FileStoreIOClient(IOptions<FileStoreIOConfig> fileIOConfig)
         {
-            _dbClient = new InternalDatabaseClient(fileIOConfig.Value.Database, fileIOConfig.Value.DatabaseSchema);
             _filePrefix = fileIOConfig.Value.FilePrefix ?? _notSpecifiedFlag;
             _appPrefix = fileIOConfig.Value.AppPrefix ?? string.Empty;
             _maxVersions = fileIOConfig.Value.MaxVersions > 1 ? fileIOConfig.Value.MaxVersions : 1;
-
+            _dbClient = new InternalDatabaseClient(fileIOConfig.Value.Database, fileIOConfig.Value.DatabaseSchema);
             IsReady = Internal_StartupCheck();
 
             if (IsReady)
             {
-
-
                 StoreProvidersList.Add(new StoreProviderDef(fileIOConfig.Value.FileSystem, _maxVersions, _appPrefix));
                 StoreProvidersList.Add(new StoreProviderDef(fileIOConfig.Value.S3, _maxVersions, _appPrefix));
                 StoreProvidersList.Add(new StoreProviderDef(fileIOConfig.Value.Box, _maxVersions, _appPrefix));
@@ -87,8 +84,7 @@ namespace Netigent.Utils.FileStoreIO
             BoxConfig? boxConfig = null,
             S3Config? s3Config = null)
         {
-            //Create the filestore client
-            _dbClient = new InternalDatabaseClient(databaseConnection, dbSchema);
+
             _filePrefix = filePrefix;
             _maxVersions = maxVersions > 1 ? maxVersions : 1;
             _appPrefix = appPrefix ?? string.Empty;
@@ -96,6 +92,8 @@ namespace Netigent.Utils.FileStoreIO
                 ? defaultFileStore
                 : FileStorageProvider.Database;
 
+            //Create the filestore client
+            _dbClient = new InternalDatabaseClient(databaseConnection, dbSchema);
             IsReady = Internal_StartupCheck();
 
             if (IsReady)
@@ -569,7 +567,7 @@ namespace Netigent.Utils.FileStoreIO
         {
             if (_dbClient == null || !_dbClient.IsReady || !string.IsNullOrEmpty(_dbClient.DbClientErrorMessage))
             {
-                throw new Exception("Database Not Available, Check Connection String");
+                throw new Exception($"Database Not Available, Check Connection String, you may need to add 'TrustServerCertificate=True;', internal errors: {_dbClient.DbClientErrorMessage}");
             }
 
             return true;
@@ -703,8 +701,6 @@ namespace Netigent.Utils.FileStoreIO
             return factory.GetClient();
         }
         #endregion
-
-
 
         #region Legacy Repointers
 

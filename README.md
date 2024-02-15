@@ -5,7 +5,11 @@ A generic layer to allow the saving and loading of file from configurable stores
 Initially thanks for considering using this library - we hope that it gives you some benefits.
 In terms of using the Library the following should get you up and running quickly
 
+**Database** The library will autocreate and upgrade filestore table {schema}.[FileStoreIndex]. You can then manually remove column no longer used [FileType], [MainGroup] ,[SubGroup] from [FileStoreIndex] if you want - they're longer used!
+
 # Version Changes
+**1.1.4** Internal database upgrade.
+
 **1.1.3** Added this Readme.md into package
 
 **1.1.2** Added Legacy MainGroup, SubGroup helpers onto InternalFileModel, also added helper Properties onto the client AppPrefix and PathSeperator
@@ -33,8 +37,6 @@ In terms of using the Library the following should get you up and running quickl
 **1.0.3** Stablity improvements.
 
 **1.0.2** 'Customer' has been relabelled to 'MainGroup', and 'FileTypeGroup' relabelled to 'SubGroup' for clarity and added functionality to access those. 'FileType' is also now known as 'MimeType' to reflect the data stored.
-
-***Database*** If you can best to delete the table [FileStoreIndex] and allow recreation, but you dont have too. The Client will auto upgrade your database, you can then manually remove column [FileType] from [FileStoreIndex] if you want - its no longer used!
 
 ```
 	Files_GetAllV2(string[] pathTags);

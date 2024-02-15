@@ -27,17 +27,27 @@ namespace Netigent.Utils.FileStoreIO.Dal
         #region Database I/O
         private bool InitializeDatabase(out string errors)
         {
+            errors = string.Empty;
+
             try
             {
-                errors = string.Empty;
-
-                string schemaExists = $@"
+                string v0_1_intialSchemaCreation = $@"
 						IF NOT EXISTS (SELECT  schema_name FROM information_schema.schemata WHERE schema_name = '{_schemaName}' )
 						BEGIN
 							EXEC('CREATE SCHEMA [{_schemaName}]')
 						END";
 
-                string fileIndexExists = $@"
+                ExecuteQuery(v0_1_intialSchemaCreation, null);
+            }
+            catch (Exception ex)
+            {
+                errors = $"Failed Initial v.0.1.x Schema creation, {ex.Message}";
+                return false;
+            }
+
+            try
+            {
+                string v0_1_initalTableCreation = $@"
 						If not exists(select * from INFORMATION_SCHEMA.TABLES where TABLE_SCHEMA = '{_schemaName}' and TABLE_NAME = 'FileStoreIndex')
 						BEGIN
 							CREATE TABLE [{_schemaName}].[FileStoreIndex](
@@ -90,30 +100,81 @@ namespace Netigent.Utils.FileStoreIO.Dal
 						END
 						";
 
-                var schemaResult = ExecuteQuery(schemaExists, null);
-                var tableResult = ExecuteQuery(fileIndexExists, null);
-
-
-                var tableResultv3Upgrade = ExecuteQuery($@"
-                        IF NOT EXISTS (select 1 from INFORMATION_SCHEMA.COLUMNS where TABLE_SCHEMA = '{_schemaName}' and TABLE_NAME = 'FileStoreIndex' and COLUMN_NAME = 'ExtClientRef')
-							BEGIN
-								ALTER TABLE [{_schemaName}].[FileStoreIndex] ADD
-								[PathTags] [varchar](1024) NULL;
-							
-								EXEC('UPDATE [{_schemaName}].[FileStoreIndex]
-                                      SET [PathTags] = REPLACE(''/'' + IsNull([MainGroup], '''') + ''/'' + IsNull([SubGroup], '''') + ''/'', ''//'', ''/'')');
-
-                                EXEC sp_rename '{_schemaName}.FileStoreIndex.FilePath', 'ExtClientRef', 'COLUMN';
-							END
-                        ", null);
-
-                return true;
+                ExecuteQuery(v0_1_initalTableCreation, null);
             }
             catch (Exception ex)
             {
-                errors = ex.Message;
+                errors = $"Failed Initial v.0.1.x Table creation, {ex.Message}";
                 return false;
             }
+
+            try
+            {
+
+                string v1_0_addUpdateMetaData = $@"
+						If not exists(select * from INFORMATION_SCHEMA.COLUMNS where TABLE_SCHEMA = '{_schemaName}' and TABLE_NAME = 'FileStoreIndex' and COLUMN_NAME = 'MainGroup')
+						BEGIN
+							ALTER TABLE [{_schemaName}].[FileStoreIndex] ADD
+							[MainGroup] [varchar](250) NULL
+						END
+
+						If not exists(select * from INFORMATION_SCHEMA.COLUMNS where TABLE_SCHEMA = '{_schemaName}' and TABLE_NAME = 'FileStoreIndex' and COLUMN_NAME = 'SubGroup')
+						BEGIN
+							ALTER TABLE [{_schemaName}].[FileStoreIndex] ADD
+							[SubGroup] [varchar](250) NULL
+						END
+
+						If not exists(select * from INFORMATION_SCHEMA.COLUMNS where TABLE_SCHEMA = '{_schemaName}' and TABLE_NAME = 'FileStoreIndex' and COLUMN_NAME = 'MimeType')
+						BEGIN
+							ALTER TABLE [{_schemaName}].[FileStoreIndex] ADD
+							[MimeType] [varchar](250) NULL
+									
+							EXEC('UPDATE [{_schemaName}].[FileStoreIndex] SET [MimeType] = [MimeType]')
+						END
+
+						IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS where TABLE_NAME = 'FileStoreIndex' and TABLE_SCHEMA = '{_schemaName}' and COLUMN_NAME = 'MainGroup' and CHARACTER_MAXIMUM_LENGTH = 1200)
+						BEGIN
+							ALTER TABLE [{_schemaName}].[FileStoreIndex]
+							ALTER COLUMN [MainGroup] VARCHAR(1200)
+						END
+  
+						IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS where TABLE_NAME = 'FileStoreIndex' and TABLE_SCHEMA = '{_schemaName}' and COLUMN_NAME = 'SizeInBytes')
+						BEGIN
+							ALTER TABLE [{_schemaName}].[FileStoreIndex]
+							ADD [SizeInBytes] BIGINT
+						END
+						";
+                ExecuteQuery(v1_0_addUpdateMetaData, null);
+            }
+            catch (Exception ex)
+            {
+                errors = $"Failed Adding v.1.0.x support, {ex.Message}";
+                return false;
+            }
+
+            try
+            {
+                var v1_1_awsSupport = $@"
+                        IF NOT EXISTS (select 1 from INFORMATION_SCHEMA.COLUMNS where TABLE_SCHEMA = '{_schemaName}' and TABLE_NAME = 'FileStoreIndex' and COLUMN_NAME = 'ExtClientRef')
+							BEGIN
+								ALTER TABLE [{_schemaName}].[FileStoreIndex] ADD
+								[PathTags] [varchar](2048) NULL
+							
+								EXEC('UPDATE [{_schemaName}].[FileStoreIndex] SET [PathTags] = REPLACE(IsNull([MainGroup], '''') + ''/'' + IsNull([SubGroup], ''''), ''//'', ''/'')')
+
+                                EXEC('sp_rename ''{_schemaName}.FileStoreIndex.FilePath'', ''ExtClientRef'', ''COLUMN''')
+							END
+                        ";
+
+                ExecuteQuery(v1_1_awsSupport, null);
+            }
+            catch (Exception ex)
+            {
+                errors = $"Failed Adding v.1.1.x support, {ex.Message}";
+                return false;
+            }
+
+            return true;
         }
 
         private List<T> RunQueryToList<T>(string query, DynamicParameters parms = null, string dbConnection = "")
