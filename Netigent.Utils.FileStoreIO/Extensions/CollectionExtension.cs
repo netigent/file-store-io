@@ -5,8 +5,6 @@ using System.Collections.Specialized;
 using System.ComponentModel;
 using System.Linq;
 using System.Reflection;
-using System.Text;
-using System.Threading.Tasks;
 
 namespace Netigent.Utils.FileStoreIO.Extensions
 {
@@ -24,7 +22,7 @@ namespace Netigent.Utils.FileStoreIO.Extensions
 
             type.InvokeMember("CheckReentrancy", BindingFlags.Instance | BindingFlags.InvokeMethod | BindingFlags.NonPublic, null, collection, null);
             var itemsProp = type.BaseType.GetProperty("Items", BindingFlags.NonPublic | BindingFlags.FlattenHierarchy | BindingFlags.Instance);
-            var privateItems = itemsProp.GetValue(collection) as IList<T>;
+            IList<T>? privateItems = itemsProp.GetValue(collection) as IList<T>;
             foreach (var item in enumerable)
             {
                 privateItems.Add(item);

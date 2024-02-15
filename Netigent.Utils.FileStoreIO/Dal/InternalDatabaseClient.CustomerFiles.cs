@@ -4,8 +4,9 @@ using Netigent.Utils.FileStoreIO.Models;
 
 namespace Netigent.Utils.FileStoreIO.Dal
 {
-	public partial class InternalDatabaseClient
-	{
+    public partial class InternalDatabaseClient
+    {
+        /*
 		/// <summary>
 		/// Get All as List<CustomerFiles>
 		/// </summary>
@@ -97,5 +98,6 @@ namespace Netigent.Utils.FileStoreIO.Dal
 
 			return ExecuteQuery(queryDef, queryParms);
 		}
-	}
+		*/
+    }
 }

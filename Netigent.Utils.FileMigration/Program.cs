@@ -1,20 +1,35 @@
 ﻿using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
-using Microsoft.IdentityModel.Abstractions;
 using Netigent.Utils.FileStoreIO;
-using Netigent.Utils.FileStoreIO.Enum;
+using Netigent.Utils.FileStoreIO.Enums;
 using Netigent.Utils.FileStoreIO.Models;
-using System.Drawing;
+
+public class ProviderType
+{
+    public FileStorageProvider Provider { get; set; }
+    public char ShortCode { get; set; }
+
+    public bool isReady { get; set; } = false;
+
+    public ProviderType(IFileStoreIOClient fileStore, FileStorageProvider fileStorageProvider, char shortCode)
+    {
+        Provider = fileStorageProvider;
+        ShortCode = shortCode;
+        isReady = fileStore.IsClientAvailable(fileStorageProvider);
+    }
+}
 
 internal class Program
 {
     private static IFileStoreIOClient _client;
     private static bool _isReady { get; set; } = false;
-    private static bool _isUNCReady { get; set; } = false;
-    private static bool _isBoxReady { get; set; } = false;
 
     private static string LogFile;
+
+    private static IList<ProviderType> ProviderList { get; set; }
+
+    private static IOptions<FileStoreIOConfig>? fileStoreIOConfig { get; set; }
 
     private static void LogMessage(string message, bool newLine = true, ConsoleColor textColour = ConsoleColor.White)
     {
@@ -50,6 +65,18 @@ internal class Program
         Console.ForegroundColor = ConsoleColor.White;
     }
 
+    static void WriteProviders()
+    {
+        LogMessage($"Destinations");
+        foreach (var p in ProviderList)
+            if (p.isReady)
+                LogMessage($"{p.ShortCode} = {p.Provider}", true, ConsoleColor.DarkGreen);
+
+
+    }
+
+
+
     static async Task Main(string[] args)
     {
         string outputFolder = Path.Combine(AppContext.BaseDirectory, "Logs");
@@ -67,24 +94,25 @@ internal class Program
             .Configure<FileStoreIOConfig>(configuration.GetSection(FileStoreIOConfig.Section))
             .BuildServiceProvider();
 
-        var options = services.GetService<IOptions<FileStoreIOConfig>>();
+        fileStoreIOConfig = services.GetService<IOptions<FileStoreIOConfig>>();
 
         LogMessage("Netigent FileStore Attachment Migration (Starting)...");
 
-        _isReady = Init(options);
+        _client = new FileStoreIOClient(fileStoreIOConfig);
+        ProviderList = new List<ProviderType>()
+        {
+            new ProviderType(_client, FileStorageProvider.Database, 'd'),
+            new ProviderType(_client, FileStorageProvider.FileSystem, 'f'),
+            new ProviderType(_client, FileStorageProvider.Box, 'b'),
+            new ProviderType(_client, FileStorageProvider.S3, 's'),
+            new ProviderType(_client, FileStorageProvider.Azure, 'a'),
+        };
 
-        if (_isReady)
+        if (_client.IsReady)
         {
             LogMessage($"");
             LogMessage($"Logfile for this session is '{LogFile}'", true, ConsoleColor.Yellow);
-            LogMessage($"");
-
-            LogMessage($"Storage Options:");
-            LogMessage($"================");
-            LogMessage($"Database = Y", true, ConsoleColor.DarkGreen);
-            LogMessage($"FileSystem = {(_isUNCReady ? "Y" : "N")} ({options.Value.FileStoreRoot})", true, _isUNCReady ? ConsoleColor.Green : ConsoleColor.Red);
-            LogMessage($"Box = {(_isBoxReady ? "Y" : "N")} (EnterpriseId: {options.Value.Box?.EnterpriseID}, AppId: {options.Value.Box?.BoxAppSettings?.ClientID})", true, _isBoxReady ? ConsoleColor.Green : ConsoleColor.Red);
-            LogMessage($"");
+            WriteProviders();
 
             bool exitSystem = false;
             do
@@ -94,7 +122,6 @@ internal class Program
                 {
                     case "0":
                         _ = PrintStats();
-
                         break;
 
                     case "1":
@@ -145,19 +172,14 @@ internal class Program
         LogMessage("================");
 
 
-        var fileList = _client.Files_GetAll();
+        var fileList = _client.Files_GetAll("");
         if (fileList?.Count > 0)
         {
             var uFiles = fileList.DistinctBy(x => x.FileRef).ToList();
-            long tFiles = uFiles.Count();
-            long dbCount = uFiles.Where(x => x.FileLocation == (int)FileStorageProvider.Database).Count();
-            long fsCount = uFiles.Where(x => x.FileLocation == (int)FileStorageProvider.FileSystem).Count();
-            long boxCount = uFiles.Where(x => x.FileLocation == (int)FileStorageProvider.Box).Count();
-
             LogMessage($"There are {uFiles.Count}x files");
-            LogMessage($"Database = {dbCount}");
-            LogMessage($"Filesystem = {fsCount}");
-            LogMessage($"Box = {boxCount}");
+            foreach (var p in ProviderList)
+                LogMessage($"{p.Provider} = {uFiles.Where(x => x.FileLocation == (int)p.Provider).Count()}x files");
+
         }
         else
         {
@@ -173,32 +195,13 @@ internal class Program
         return true;
     }
 
-    private static FileStorageProvider GetLocation(int loc)
-    {
-        switch (loc)
-        {
-            case (int)FileStorageProvider.Database:
-                return FileStorageProvider.Database;
-
-            case (int)FileStorageProvider.Box:
-                return FileStorageProvider.Box;
-
-            case (int)FileStorageProvider.FileSystem:
-                return FileStorageProvider.FileSystem;
-
-            default:
-                return FileStorageProvider.UseDefault;
-        }
-    }
-
-
     private static bool ListAllFiles()
     {
         LogMessage("List Files:");
         LogMessage("================");
 
 
-        var fileList = _client.Files_GetAll();
+        var fileList = _client.Files_GetAll("");
         if (fileList?.Count > 0)
         {
             var uFiles = fileList.DistinctBy(x => x.FileRef).ToList();
@@ -208,7 +211,7 @@ internal class Program
                 var fileInfo = uFiles[i];
                 var vh = _client.File_GetVersionsInfo(fileInfo.FileRef);
 
-                LogMessage($"{i + 1}:\tRef:{fileInfo.FileRef}\tVersions: {vh.Count}\tLocation: {GetLocation(fileInfo.FileLocation)}\t{fileInfo.RawName}");
+                LogMessage($"{i + 1}:\tRef:{fileInfo.FileRef}\tVersions: {vh.Count}\tLocation: {GetLocation(fileInfo.FileLocation)}\t{fileInfo.OrginalNameWithExt}");
             }
         }
         else
@@ -225,39 +228,25 @@ internal class Program
     {
         LogMessage("Build File Index:");
         LogMessage("================");
-        LogMessage("Pick location (F)ilesystem or (B)ox (anything else will cancel command) then press ENTER", true, ConsoleColor.Cyan);
-        string location = (Console.ReadLine() ?? "").Trim().ToLower();
 
-        FileStorageProvider sp = FileStorageProvider.UseDefault;
-
-        switch (location)
+        FileStorageProvider? sp = AskDestination();
+        if (sp == null)
         {
-            case "b":
-                sp = FileStorageProvider.Box;
-                break;
-
-            case "f":
-                sp = FileStorageProvider.FileSystem;
-                break;
-
-            default:
-                LogMessage("Cancelled");
-                LogMessage("");
-
-                return false;
+            LogMessage("-= eXITING oPERATION =-");
+            return false;
         }
 
-        LogMessage($"Confirm you want to BUILD FILE INDEX ON '{sp}', this may take a long time.......... (y/n)?", true, ConsoleColor.Cyan);
+        LogMessage($"Confirm you want to BUILD FILE INDEX ON '{sp}' scoped to {fileStoreIOConfig.Value.AppPrefix}, this may take a long time.......... (y/n)?", true, ConsoleColor.Cyan);
 
         string confirm = (Console.ReadLine() ?? "").Trim().ToLower();
 
         if (confirm == "y")
         {
-            var result = await _client.File_IndexAllAsync(sp);
+            var result = await _client.File_IndexAsync(sp ?? FileStorageProvider.UseDefault, scopeToAppPrefix: !string.IsNullOrEmpty(fileStoreIOConfig.Value.AppPrefix));
 
             LogMessage("");
             LogMessage("================");
-            LogMessage($"Build File Index Complete, Success = {result.Success}, Messages = {string.Join(", ", result.Message)}");
+            LogMessage($"Build File Index Complete, Success = {result.Success}, Messages = {string.Join(", ", result.Messages)}");
             LogMessage("================");
             LogMessage("");
             return true;
@@ -276,8 +265,7 @@ internal class Program
         LogMessage("Verfiy ALL Files (this maybe take some time!!):");
         LogMessage("================");
 
-
-        var fileList = _client.Files_GetAll();
+        var fileList = _client.Files_GetAll("");
         if (fileList?.Count > 0)
         {
             var uFiles = fileList.DistinctBy(x => x.FileRef).ToList();
@@ -293,9 +281,9 @@ internal class Program
 
                 for (int z = 0; z < vh.Count; z++)
                 {
-                    LogMessage($"{i + 1}:\tRef:{fileInfo.FileRef}\tVersion #:{z}\tLocation: {GetLocation(fileInfo.FileLocation)}\t{fileInfo.RawName}", false);
+                    LogMessage($"{i + 1}:\tRef:{fileInfo.FileRef}\tVersion #:{z}\tLocation: {GetLocation(fileInfo.FileLocation)}\t{fileInfo.OrginalNameWithExt}", false);
 
-                    var fileObject = await _client.File_Get(fileInfo.FileRef, z);
+                    var fileObject = await _client.File_GetAsyncV2(fileInfo.FileRef, z);
 
                     if (fileObject != null && fileObject?.Data?.LongLength > 0)
                     {
@@ -320,6 +308,10 @@ internal class Program
         return true;
     }
 
+    private static FileStorageProvider? GetLocation(int fileLocation)
+    {
+        return ProviderList.FirstOrDefault(x => (int)x.Provider == fileLocation).Provider;
+    }
 
     private static async Task<bool> DeleteSingleFile()
     {
@@ -332,7 +324,7 @@ internal class Program
 
         if (fi != null)
         {
-            LogMessage($"Confirm Delete '{fi.RawName}' in {GetLocation(fi.FileLocation)} (y/n)?", true, ConsoleColor.Cyan);
+            LogMessage($"Confirm Delete '{fi.OrginalNameWithExt}' in {GetLocation(fi.FileLocation)} (y/n)?", true, ConsoleColor.Cyan);
 
             string confirm = (Console.ReadLine() ?? "").Trim().ToLower();
 
@@ -375,6 +367,24 @@ internal class Program
 
     }
 
+    static FileStorageProvider? AskDestination()
+    {
+        LogMessage($"Destinations");
+        foreach (var p in ProviderList)
+            LogMessage($"{p.ShortCode} = {p.Provider}", true, ConsoleColor.DarkGreen);
+
+        LogMessage("Press Any Key to End", true, ConsoleColor.Cyan);
+        char locaitons = (Console.ReadLine() ?? "").Trim().ToLower().FirstOrDefault();
+
+        foreach (var l in ProviderList)
+        {
+            if (locaitons == l.ShortCode)
+                return l.Provider;
+        }
+
+        return null;
+    }
+
     private static async Task<bool> MigrateFilesAsync(string fileRef = "")
     {
         bool allFiles = string.IsNullOrEmpty(fileRef) ? true : false;
@@ -385,51 +395,37 @@ internal class Program
             LogMessage("======================");
         }
 
-        LogMessage("Destination ?:");
-        LogMessage("(D)atabase, (F)ilesystem or (B)ox (anything else will cancel command) then press ENTER", true, ConsoleColor.Cyan);
-        string location = (Console.ReadLine() ?? "").Trim().ToLower();
-
-        FileStorageProvider sp = FileStorageProvider.UseDefault;
-
-        switch (location)
+        FileStorageProvider? sp = AskDestination();
+        if (sp == null)
         {
-            case "b":
-                sp = FileStorageProvider.Box;
-                break;
-
-            case "d":
-                sp = FileStorageProvider.Database;
-                break;
-
-            case "f":
-                sp = FileStorageProvider.FileSystem;
-                break;
-
-            default:
-                LogMessage("Cancelled");
-                LogMessage("");
-
-                return false;
+            LogMessage("-= eXITING oPERATION =-");
+            return false;
         }
 
-        LogMessage($"Confirm Move '{(allFiles ? "AllFiles" : $"File: {fileRef}")}' to {sp} (y/n)?", true, ConsoleColor.Cyan);
+        LogMessage("(M)ove or (C)opy, Move, will delete original IF file copies and byte count matches, copy will leave original where it is... But record will be updated... You are advised to backup the FileStoreIndex table....", true, ConsoleColor.Cyan);
+        char opType = (Console.ReadLine() ?? "").Trim().ToLower().FirstOrDefault();
+        bool moveOnly = opType == 'm';
+
+
+        string opType1 = moveOnly ? "Move" : "Copy";
+
+        LogMessage($"Confirm {opType1} '{(allFiles ? "AllFiles" : $"File: {fileRef}")}' to {sp} (y/n)?", true, ConsoleColor.Cyan);
 
         string confirm = (Console.ReadLine() ?? "").Trim().ToLower();
-
         if (confirm == "y")
         {
             if (allFiles)
             {
-                var fileList = _client.Files_GetAll();
+                var fileList = _client.Files_GetAll("");
                 int tFiles = fileList.Count;
-                LogMessage($"Moving {tFiles}x files to {sp} ");
+                LogMessage($"{opType1} {tFiles}x files to {sp} ");
                 if (tFiles > 0)
                 {
                     for (int i = 0; i < fileList.Count; i++)
                     {
                         var fileItem = fileList[i];
-                        LogMessage($"{i + 1}/{tFiles}: Moving '{fileItem.Name}' ({fileItem.FileRef})... ", false);
-                        _ = await MoveFileAsync(fileItem.FileRef, sp);
+                        LogMessage($"{i + 1}/{tFiles}: {opType1} '{fileItem.Name}' ({fileItem.FileRef})... ", false);
+                        _ = await MoveFileAsync(fileItem.FileRef, sp ?? FileStorageProvider.UseDefault, moveOnly);
                     }
                 }
             }
@@ -438,8 +434,8 @@ internal class Program
                 var fileToMove = _client.File_GetVersionsInfo(fileRef).FirstOrDefault();
                 if (fileToMove != null)
                 {
-                    LogMessage($"1/1: Moving '{fileToMove.Name}' ({fileToMove.FileRef})... ", false);
-                    _ = await MoveFileAsync(fileToMove.FileRef, sp);
+                    LogMessage($"1/1: {opType1} '{fileToMove.Name}' ({fileToMove.FileRef})... ", false);
+                    _ = await MoveFileAsync(fileToMove.FileRef, sp ?? FileStorageProvider.UseDefault, moveOnly);
                 }
                 else
                 {
@@ -454,13 +450,13 @@ internal class Program
         return true;
     }
 
-    private static async Task<bool> MoveFileAsync(string fileRef, FileStorageProvider loc)
+    private static async Task<bool> MoveFileAsync(string fileRef, FileStorageProvider loc, bool moveFile)
     {
-        var result = await _client.File_Migrate(fileRef, loc);
+        var result = await _client.File_Migrate(fileRef, loc, moveFile);
         if (result.Success)
         {
             LogMessage("Confirming...", false, ConsoleColor.Yellow);
-            FileObjectModel? checkFile = await _client.File_Get(fileRef, 0);
+            FileObjectModel? checkFile = await _client.File_GetAsyncV2(fileRef, 0);
 
             if (checkFile != null && checkFile?.Data?.LongLength > 0)
             {
@@ -476,20 +472,20 @@ internal class Program
         }
         else
         {
-            LogMessage($"Migration Error Message: {string.Join(",", result.Message)}", true, ConsoleColor.Yellow);
+            LogMessage($"Migration Error Message: {string.Join(",", result.Messages)}", true, ConsoleColor.Yellow);
             return false;
         }
     }
 
     private static string GetCommand()
     {
-        LogMessage("Command Options:");
+        LogMessage($"AppPrefix: {fileStoreIOConfig?.Value?.AppPrefix}, Command Options:");
         LogMessage("================");
         LogMessage("0 = File Statics (Good Place to Start)");
         LogMessage("1 = List All Files");
         LogMessage("2 = Migrate Single File");
         LogMessage("3 = Migrate All Files");
-        LogMessage("4 = Build Index (Not available yet)");
+        LogMessage("4 = Build Index");
         LogMessage("5 = Delete Single File");
         LogMessage("6 = Verify All Files (This will download each file and its version, slow!)");
         LogMessage("Type option (or ANY KEY to exit)", true, ConsoleColor.Cyan);
@@ -497,25 +493,5 @@ internal class Program
 
         // Return Option
         return (Console.ReadLine() ?? "").Trim();
-    }
-
-    private static bool Init(IOptions<FileStoreIOConfig> options)
-    {
-        try
-        {
-            // var options = services.GetService<IOptions<FileStoreIOConfig>>();
-
-            _client = new FileStoreIOClient(options);
-            _isUNCReady = _client.IsFileSystemAvailable;
-            _isBoxReady = _client.IsBoxAvailable;
-
-            return true;
-        }
-        catch (Exception ex)
-        {
-            LogMessage("Error Starting Client " + ex.Message.ToString());
-        }
-
-        return false;
     }
 }

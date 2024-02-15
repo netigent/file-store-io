@@ -1,47 +1,33 @@
-﻿using Netigent.Utils.FileStoreIO.Enum;
+﻿using Netigent.Utils.FileStoreIO.Clients.Box;
+using Netigent.Utils.FileStoreIO.Clients.FileSystem;
+using Netigent.Utils.FileStoreIO.Clients.S3;
+using Netigent.Utils.FileStoreIO.Enums;
 
 namespace Netigent.Utils.FileStoreIO.Models
 {
     public class FileStoreIOConfig
     {
         public static string Section { get; } = "FileStoreIO";
+
         public string Database { get; set; }
-        public string FileStoreRoot { get; set; }
+
+        /// <summary>
+        /// If you are pointed to a shared folder, do you want to scope to this?
+        /// </summary>
+        public string AppPrefix { get; set; } = string.Empty;
+
         public string FilePrefix { get; set; } = "_$";
+
         public string DatabaseSchema { get; set; } = "fileStore";
-        public bool StoreFileAsUniqueRef { get; set; } = false;
+
         public int MaxVersions { get; set; } = 1;
+
         public FileStorageProvider DefaultStorage { get; set; } = FileStorageProvider.Database;
+
+        public FileSystemConfig? FileSystem { get; set; }
+
         public BoxConfig? Box { get; set; }
 
+        public S3Config? S3 { get; set; }
     }
-
-    public class BoxConfig
-    {
-        public BoxAppSettings BoxAppSettings { get; set; }
-        public string EnterpriseID { get; set; }
-
-        public string RootFolder { get; set; } = "0";
-
-        public bool AutoCreateRoot { get; set; } = false;
-
-        public int TimeoutInMins { get; set; } = 15;
-    }
-
-    public class BoxAppSettings
-    {
-        public string ClientSecret { get; set; }
-        public string ClientID { get; set; }
-        public AppAuth AppAuth { get; set; }
-    }
-
-    public class AppAuth
-    {
-        public string PublicKeyID { get; set; }
-        public string PrivateKey { get; set; }
-        public string Passphrase { get; set; }
-    }
-
-
-
 }

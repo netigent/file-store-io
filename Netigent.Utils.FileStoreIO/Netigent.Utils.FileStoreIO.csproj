@@ -1,26 +1,23 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
 	<PropertyGroup>
-		<TargetFrameworks>net6.0;netstandard2.0</TargetFrameworks>
-		<Version>1.0.14</Version>
-		<LangVersion>9.0</LangVersion>
+		<TargetFrameworks>net7.0;netstandard2.0</TargetFrameworks>
+		<Version>1.1.1</Version>
+		<LangVersion>10.0</LangVersion>
 		<GeneratePackageOnBuild>True</GeneratePackageOnBuild>
+		<Nullable>enable</Nullable>
+		<!--<WarningsAsErrors>CS8600;CS8602;CS8603</WarningsAsErrors>-->
 	</PropertyGroup>
 
 	<ItemGroup>
-	  <Compile Remove="Logic\**" />
-	  <EmbeddedResource Remove="Logic\**" />
-	  <None Remove="Logic\**" />
-	</ItemGroup>
-
-	<ItemGroup>
-		<PackageReference Include="BouncyCastle.Cryptography" Version="2.2.1" />
-		<PackageReference Include="Dapper" Version="2.0.123" />
-		<PackageReference Include="Microsoft.AspNetCore.Http.Features" Version="5.0.17" />
-		<PackageReference Include="Microsoft.Extensions.Options" Version="6.0.0" />
-		<PackageReference Include="Newtonsoft.Json" Version="13.0.2" />
-		<PackageReference Include="System.Data.SqlClient" Version="4.8.5" />
-		<PackageReference Include="System.IdentityModel.Tokens.Jwt" Version="6.26.0" />
+		<PackageReference Include="AWSSDK.S3" Version="3.7.305.25" />
+		<PackageReference Include="BouncyCastle.Cryptography" Version="2.3.0" />
+		<PackageReference Include="Dapper" Version="2.1.28" />
+		<PackageReference Include="Microsoft.AspNetCore.Http.Features" Version="3.1.32" />
+		<PackageReference Include="Microsoft.Extensions.Options" Version="7.0.1" />
+		<PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+		<PackageReference Include="System.Data.SqlClient" Version="4.8.6" />
+		<PackageReference Include="System.IdentityModel.Tokens.Jwt" Version="7.3.1" />
 	</ItemGroup>
 
 </Project>

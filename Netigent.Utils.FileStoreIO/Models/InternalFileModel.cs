@@ -10,11 +10,22 @@ namespace Netigent.Utils.FileStoreIO.Models
         #endregion
 
         #region Public ReadOnly Props
-        public string RawName
+        /// <summary>
+        /// Original Name with Version info strippped out...
+        /// </summary>
+        public string OrginalNameNoExt
         {
             get
             {
                 return Name.Split(new string[] { _versionFlag }, StringSplitOptions.RemoveEmptyEntries).FirstOrDefault();
+            }
+        }
+
+        public string OrginalNameWithExt
+        {
+            get
+            {
+                return Name.Split(new string[] { _versionFlag }, StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() + Extension;
             }
         }
 
@@ -42,38 +53,61 @@ namespace Netigent.Utils.FileStoreIO.Models
 
         public InternalFileModel(InternalFileModel model)
         {
-            Created = model.Created;
-            Data = model.Data;
-            Description = model.Description;
-            Extension = model.Extension;
-            FilePath = model.FilePath;
-            FileRef = model.FileRef;
-            MimeType = model.MimeType;
             Id = model.Id;
-            Modified = model.Modified;
             Name = model.Name;
+            MimeType = model.MimeType;
+            Extension = model.Extension;
+            Description = model.Description;
             UploadedBy = model.UploadedBy;
+            ExtClientRef = model.ExtClientRef;
+            Data = model.Data;
+            FileRef = model.FileRef;
+            Created = model.Created;
+            Modified = model.Modified;
             FileLocation = model.FileLocation;
-            MainGroup = model.MainGroup;
-            SubGroup = model.SubGroup;
             SizeInBytes = model.SizeInBytes;
+            FolderPath = model.FolderPath;
         }
         #endregion
 
-        public DateTime? Created { get; set; }
         public byte[] Data { get; set; }
         public string Description { get; set; }
+
+        /// <summary>
+        /// Extension of file e.g. .pdf .xls .doc etc
+        /// </summary>
         public string Extension { get; set; }
-        public string FilePath { get; set; }
+
+        /// <summary>
+        /// FolderPath e.g. /4521/SignedInvoice/, /839, /myFolder/mySubFolder/
+        /// </summary>
+        public string FolderPath { get; set; }
+
+        /// <summary>
+        /// 3rd Party Path, e.g. Box {Fileid}/{RevisionId} 1185335280675/1291996203075, AWS-S3 /myFolder/subFolder/subFolder/myfile.pdf
+        /// </summary>
+        public string ExtClientRef { get; set; }
+
+        /// <summary>
+        /// Unique FileRef for your file object e.g. _$eabdd19081e04ddeb38bf2a871e7893b
+        /// </summary>
         public string FileRef { get; set; }
+
+
         public string MimeType { get; set; }
         public long Id { get; set; }
-        public DateTime? Modified { get; set; }
+
+        /// <summary>
+        /// Name of file e.g. '200094 March Invoice 13149R'
+        /// </summary>
         public string Name { get; set; }
         public string UploadedBy { get; set; }
         public int FileLocation { get; set; }
-        public string MainGroup { get; set; }
-        public string SubGroup { get; set; }
+
         public long SizeInBytes { get; set; } = -1;
+
+        public DateTime? Created { get; set; } = DateTime.UtcNow;
+        public DateTime? Modified { get; set; } = DateTime.UtcNow;
+
     }
 }

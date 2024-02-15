@@ -6,38 +6,38 @@ using System.Linq;
 
 namespace Netigent.Utils.FileStoreIO.Dal
 {
-	public partial class InternalDatabaseClient
-	{
-		public string DbClientErrorMessage { get; private set; } = string.Empty;
+    public partial class InternalDatabaseClient
+    {
+        public string DbClientErrorMessage { get; private set; } = string.Empty;
 
-		public bool IsReady;
+        public bool IsReady;
 
-		private readonly string _schemaName;
-		private string _managementConnection { get; }
+        private readonly string _schemaName;
+        private string _managementConnection { get; }
 
-		public InternalDatabaseClient(string sqlManagementConnection, string schemaName)
-		{
-			_managementConnection = sqlManagementConnection;
-			_schemaName = schemaName;
+        public InternalDatabaseClient(string sqlManagementConnection, string schemaName)
+        {
+            _managementConnection = sqlManagementConnection;
+            _schemaName = schemaName;
 
-			IsReady = InitializeDatabase(out string errorMessage);
-			DbClientErrorMessage = errorMessage;
-		}
+            IsReady = InitializeDatabase(out string errorMessage);
+            DbClientErrorMessage = errorMessage;
+        }
 
-		#region Database I/O
-		private bool InitializeDatabase(out string errors)
-		{
-			try
-			{
-				errors = string.Empty;
+        #region Database I/O
+        private bool InitializeDatabase(out string errors)
+        {
+            try
+            {
+                errors = string.Empty;
 
-				string schemaExists = $@"
+                string schemaExists = $@"
 						IF NOT EXISTS (SELECT  schema_name FROM information_schema.schemata WHERE schema_name = '{_schemaName}' )
 						BEGIN
 							EXEC('CREATE SCHEMA [{_schemaName}]')
 						END";
 
-				string fileIndexExists = $@"
+                string fileIndexExists = $@"
 						If not exists(select * from INFORMATION_SCHEMA.TABLES where TABLE_SCHEMA = '{_schemaName}' and TABLE_NAME = 'FileStoreIndex')
 						BEGIN
 							CREATE TABLE [{_schemaName}].[FileStoreIndex](
@@ -87,69 +87,89 @@ namespace Netigent.Utils.FileStoreIO.Dal
 						BEGIN
 							ALTER TABLE [{_schemaName}].[FileStoreIndex]
 							ADD [SizeInBytes] BIGINT
-						END";
+						END
+						";
 
-				var schemaResult = ExecuteQuery(schemaExists, null);
-				var tableResult = ExecuteQuery(fileIndexExists, null);
-				return true;
-			}
-			catch (Exception ex)
-			{
-				errors = ex.Message;
-				return false;
-			}
-		}
+                var schemaResult = ExecuteQuery(schemaExists, null);
+                var tableResult = ExecuteQuery(fileIndexExists, null);
 
-		private List<T> RunQueryToList<T>(string query, DynamicParameters parms = null, string dbConnection = "")
-		{
-			List<T> output;
 
-			var connectionString = string.IsNullOrEmpty(dbConnection) ? _managementConnection : dbConnection;
+                var tableResultv3Upgrade = ExecuteQuery($@"
+                        IF NOT EXISTS (select 1 from INFORMATION_SCHEMA.COLUMNS where TABLE_SCHEMA = '{_schemaName}' and TABLE_NAME = 'FileStoreIndex' and COLUMN_NAME = 'ExtClientRef')
+							BEGIN
+								ALTER TABLE [{_schemaName}].[FileStoreIndex] ADD
+								[FolderPath] [varchar](1024) NULL;
+							
+								EXEC('UPDATE [{_schemaName}].[FileStoreIndex]
+                                      SET [FolderPath] = REPLACE(''/'' + IsNull([MainGroup], '''') + ''/'' + IsNull([SubGroup], '''') + ''/'', ''//'', ''/'')');
 
-			//try get model from database
-			using (var connection = new SqlConnection(connectionString))
-			{
-				connection.Open();
-				output = connection.Query<T>(query, parms).ToList();
-				connection.Close();
-			}
+								ALTER TABLE [{_schemaName}].[FileStoreIndex] DROP COLUMN
+								[MainGroup],
+								[SubGroup];
 
-			return output;
-		}
+                                EXEC sp_rename '{_schemaName}.FileStoreIndex.FilePath', 'ExtClientRef', 'COLUMN';
+							END
+                        ", null);
 
-		private T RunQuery<T>(string query, DynamicParameters parms = null, string dbConnection = "")
-		{
-			T output;
+                return true;
+            }
+            catch (Exception ex)
+            {
+                errors = ex.Message;
+                return false;
+            }
+        }
 
-			var connectionString = string.IsNullOrEmpty(dbConnection) ? _managementConnection : dbConnection;
+        private List<T> RunQueryToList<T>(string query, DynamicParameters parms = null, string dbConnection = "")
+        {
+            List<T> output;
 
-			//try get model from database
-			using (var connection = new SqlConnection(connectionString))
-			{
-				connection.Open();
-				output = connection.Query<T>(query, parms).FirstOrDefault();
-				connection.Close();
-			}
+            var connectionString = string.IsNullOrEmpty(dbConnection) ? _managementConnection : dbConnection;
 
-			return output;
-		}
+            //try get model from database
+            using (var connection = new SqlConnection(connectionString))
+            {
+                connection.Open();
+                output = connection.Query<T>(query, parms).ToList();
+                connection.Close();
+            }
 
-		private int ExecuteQuery(string query, DynamicParameters parms = null, string dbConnection = "")
-		{
-			int rowCount;
+            return output;
+        }
 
-			var connectionString = string.IsNullOrEmpty(dbConnection) ? _managementConnection : dbConnection;
+        private T RunQuery<T>(string query, DynamicParameters parms = null, string dbConnection = "")
+        {
+            T output;
 
-			//try get model from database
-			using (var connection = new SqlConnection(connectionString))
-			{
-				connection.Open();
-				rowCount = connection.Execute(query, parms);
-				connection.Close();
-			}
+            var connectionString = string.IsNullOrEmpty(dbConnection) ? _managementConnection : dbConnection;
 
-			return rowCount;
-		}
-		#endregion
-	}
+            //try get model from database
+            using (var connection = new SqlConnection(connectionString))
+            {
+                connection.Open();
+                output = connection.Query<T>(query, parms).FirstOrDefault();
+                connection.Close();
+            }
+
+            return output;
+        }
+
+        private int ExecuteQuery(string query, DynamicParameters parms = null, string dbConnection = "")
+        {
+            int rowCount;
+
+            var connectionString = string.IsNullOrEmpty(dbConnection) ? _managementConnection : dbConnection;
+
+            //try get model from database
+            using (var connection = new SqlConnection(connectionString))
+            {
+                connection.Open();
+                rowCount = connection.Execute(query, parms);
+                connection.Close();
+            }
+
+            return rowCount;
+        }
+        #endregion
+    }
 }
