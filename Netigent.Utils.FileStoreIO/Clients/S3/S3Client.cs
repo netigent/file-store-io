@@ -46,7 +46,11 @@ namespace Netigent.Utils.FileStoreIO.Clients.S3
             {
                 S3Config? s3Config = config as S3Config;
 
-                if (s3Config != null)
+                if (s3Config != null
+                    && s3Config?.AccessKey?.Length > 0
+                    && s3Config?.SecretKey?.Length > 0
+                    && s3Config?.BucketName?.Length > 0
+                    && s3Config?.Region?.Length > 0)
                 {
                     awsAccessKey = s3Config.AccessKey;
                     awsSecretKey = s3Config.SecretKey;

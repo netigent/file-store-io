@@ -55,6 +55,9 @@ namespace Netigent.Utils.FileStoreIO
             _appPrefix = fileIOConfig.Value.AppPrefix ?? string.Empty;
             _maxVersions = fileIOConfig.Value.MaxVersions > 1 ? fileIOConfig.Value.MaxVersions : 1;
             _dbClient = new InternalDatabaseClient(fileIOConfig.Value.Database, fileIOConfig.Value.DatabaseSchema);
+            _defaultStorage = fileIOConfig.Value.DefaultStorage != FileStorageProvider.UseDefault
+                ? fileIOConfig.Value.DefaultStorage
+                : FileStorageProvider.Database;
             IsReady = Internal_StartupCheck();
 
             if (IsReady)
@@ -137,28 +140,30 @@ namespace Netigent.Utils.FileStoreIO
         }
 
         /// <inheritdoc />
-        public async Task<string> File_UpsertAsyncV2(string relationalFilePathAndName, IFormFile file, FileStorageProvider fileStorageProvider = FileStorageProvider.UseDefault, string description = "", DateTime created = default)
+        public async Task<string> File_UpsertAsyncV2(
+            string relationalFilePathAndName,
+            IFormFile file,
+            FileStorageProvider fileStorageProvider = FileStorageProvider.UseDefault,
+            string description = "",
+            DateTime created = default)
         {
-            var fileName = Path.GetFileNameWithoutExtension(file.FileName);
-            var extension = Path.GetExtension(file.FileName);
-            var fileModel = new InternalFileModel
-            {
-                Created = DateTime.UtcNow,
-                MimeType = file.ContentType,
-                Extension = extension,
-                Name = fileName,
-                Description = description ?? fileName,
-                FileLocation = fileStorageProvider == FileStorageProvider.UseDefault ? (int)_defaultStorage : (int)fileStorageProvider,
-                PathTags = relationalFilePathAndName,
-            };
+            byte[] data = null;
 
             using (var dataStream = new MemoryStream())
             {
                 await file.CopyToAsync(dataStream);
-                fileModel.Data = dataStream.ToArray();
+                data = dataStream.ToArray();
             }
 
-            return await Internal_UpsertAsync(fileModel, fileStorageProvider);
+            return await File_UpsertAsyncV2(
+                relationalFilePathAndName: relationalFilePathAndName.EndsWith(file.FileName, StringComparison.InvariantCultureIgnoreCase)
+                    ? relationalFilePathAndName // Its got the filename already
+                    : relationalFilePathAndName + SystemConstants.InternalDirectorySeparator + file.FileName,
+                fileContents: data,
+                fileStorageProvider: fileStorageProvider,
+                description: description ?? file.FileName,
+                created: created == default ? DateTime.UtcNow : created);
+
         }
 
         /// <inheritdoc/>
@@ -172,7 +177,7 @@ namespace Netigent.Utils.FileStoreIO
 
             // Repoint to new method
             await File_UpsertAsyncV2(
-                relationalFilePathAndName: $"{string.Join("/", pathTags)}/{filename}",
+                relationalFilePathAndName: $"{string.Join(SystemConstants.InternalDirectorySeparator.ToString(), pathTags)}{SystemConstants.InternalDirectorySeparator.ToString()}{filename}",
                 fileContents: fileContents,
                 fileStorageProvider: fileStorageProvider,
                 description: description,
@@ -189,7 +194,7 @@ namespace Netigent.Utils.FileStoreIO
 
             // Repoint to new method
             await File_UpsertAsyncV2(
-                relationalFilePathAndName: $"{string.Join("/", pathTags)}/{filename}",
+                relationalFilePathAndName: $"{string.Join(SystemConstants.InternalDirectorySeparator.ToString(), pathTags)}{SystemConstants.InternalDirectorySeparator.ToString()}{filename}",
                 file: file,
                 fileStorageProvider: fileStorageProvider,
                 description: description,

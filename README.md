@@ -8,6 +8,8 @@ In terms of using the Library the following should get you up and running quickl
 **Database** The library will autocreate and upgrade filestore table {schema}.[FileStoreIndex]. You can then manually remove column no longer used [FileType], [MainGroup] ,[SubGroup] from [FileStoreIndex] if you want - they're longer used!
 
 # Version Changes
+**1.1.5** Readme updates and stablization updates.
+
 **1.1.4** Internal database upgrade.
 
 **1.1.3** Added this Readme.md into package
@@ -99,38 +101,38 @@ The below method steps you through using IServiceCollection registration and inj
 Define via appSettings, keeping last 5 versions of file.
 
 ```
-	"FileStoreIO": {
-				""Database"": ""Server=.;Database=myDatabase;UID=mySa;PWD=myPassword;"",
-				""AppPrefix"": ""MyAppToScopeTo"",               
-				""FilePrefix"": ""_$"",
-				""DatabaseSchema"": ""filestore"",
-				""MaxVersions"": 5,
-				""DefaultStorage"": ""S3"",
-				""S3"": {
-					""AccessKey"": ""ExampleAccessKey"",
-					""SecretKey"": ""mysecretkeyinhere+"",
-					""Region"":  ""us-west-2"",
-					""Bucket"": ""my-example-bucket-name""
-					},
-				""Box"": {
-					""EnterpriseID"": ""123456789"",
-					""AutoCreateRoot"": false,
-					""TimeoutInMins"": 15,
-					""BoxAppSettings"": {
-						""ClientID"": ""exampleid12345"",
-						""ClientSecret"": ""examplesecret12345"",
-						""AppAuth"": {
-								""Passphrase"": ""examplepassphrase12345"",
-								""PrivateKey"": ""-----BEGIN ENCRYPTED PRIVATE KEY-----\nEXAMPLEEXAMPLEEXMAPLE\n-----END ENCRYPTED PRIVATE KEY-----\n"",
-								""PublicKeyID"": ""abc1234""
-						}
-					}
-				},
-				""FileSystem"": {
-				""RootFolder"": ""c:\\temp\\files\\"",
-				""StoreFileAsUniqueRef"": false
-				}
+"FileStoreIO": {
+	"Database": "Server=.;Database=myDatabase;UID=mySa;PWD=myPassword;",
+	"AppPrefix": "MyAppToScopeTo",               
+	"FilePrefix": "_$",
+	"DatabaseSchema": "filestore",
+	"MaxVersions": 5,
+	"DefaultStorage": "S3",
+	"S3": {
+		"AccessKey": "ExampleAccessKey",
+		"SecretKey": "mysecretkeyinhere+",
+		"Region":  "us-west-2",
+		"BucketName": "my-example-bucket-name"
 		},
+	"Box": {
+		"EnterpriseID": "123456789",
+		"AutoCreateRoot": false,
+		"TimeoutInMins": 15,
+		"BoxAppSettings": {
+			"ClientID": "exampleid12345",
+			"ClientSecret": "examplesecret12345",
+			"AppAuth": {
+					"Passphrase": "examplepassphrase12345",
+					"PrivateKey": "-----BEGIN ENCRYPTED PRIVATE KEY-----\nEXAMPLEEXAMPLEEXMAPLE\n-----END ENCRYPTED PRIVATE KEY-----\n",
+					"PublicKeyID": "abc1234"
+			}
+		}
+	},
+	"FileSystem": {
+		"RootFolder": "c:\\temp\\files\\",
+		"StoreFileAsUniqueRef": false
+	}
+},
 ```
  
 ### Registering In **Startup.cs**

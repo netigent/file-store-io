@@ -224,7 +224,8 @@ namespace Netigent.Utils.FileStoreIO.Clients.Box
                 // Nothing to upload
                 return string.Empty;
             }
-            PathInfo fileInfo = fileModel.GetPathInfo(usePathSeparator: ClientDirectoryChar);
+
+            PathInfo fileInfo = fileModel.GetPathInfo();
             long folderId = await ResolvePathTags(fileInfo.PathTags, RootFolderId);
             string endpoint = $"{UploadUrl}/content";
             string boxAttribute = BoxAttribute(fileInfo.Filename, folderId);

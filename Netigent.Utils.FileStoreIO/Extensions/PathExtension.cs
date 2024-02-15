@@ -1,4 +1,5 @@
-﻿using Netigent.Utils.FileStoreIO.Helpers;
+﻿using Netigent.Utils.FileStoreIO.Constants;
+using Netigent.Utils.FileStoreIO.Helpers;
 using Netigent.Utils.FileStoreIO.Models;
 using System;
 using System.IO;
@@ -26,9 +27,11 @@ namespace Netigent.Utils.FileStoreIO.Extensions
 
     public static class PathExtension
     {
+        public static PathInfo GetPathInfo(this InternalFileModel fileModel, char? usePathSeparator = null) =>
+            (Path.Combine(fileModel.PathTags, fileModel.Name + fileModel.Extension).SetPathSeparator(SystemConstants.InternalDirectorySeparator)).GetPathInfo();
+
         public static PathInfo GetPathInfo(this string filePath, string addRootFolderPrefix = "", string removeRootFolderPrefix = "")
         {
-            char pathSeperatorSymbol = '/';
             var relativeFileLocation = Path.Combine(addRootFolderPrefix, filePath);
 
             var fileName = Path.GetFileNameWithoutExtension(relativeFileLocation);
@@ -52,7 +55,7 @@ namespace Netigent.Utils.FileStoreIO.Extensions
             return new PathInfo
             {
                 PathTags = PathTags,
-                PathSeperator = pathSeperatorSymbol,
+                PathSeperator = SystemConstants.InternalDirectorySeparator,
                 FileExtension = extension,
                 MimeType = MimeHelper.GetMimeType(extension),
                 Filename = fileName + extension,
@@ -70,27 +73,6 @@ namespace Netigent.Utils.FileStoreIO.Extensions
             }
 
             return value;
-        }
-
-        public static PathInfo GetPathInfo(this InternalFileModel fileModel, char? usePathSeparator = null)
-        {
-            char pathSeperatorSymbol = usePathSeparator ?? Path.DirectorySeparatorChar;
-            var relativeFileLocation = Path.Combine(fileModel.PathTags, fileModel.Name + fileModel.Extension).SetPathSeparator(pathSeperatorSymbol);
-
-            var fileName = Path.GetFileNameWithoutExtension(relativeFileLocation);
-            var extension = Path.GetExtension(relativeFileLocation);
-            var pathOnly = relativeFileLocation.Split(separator: new[] { fileName }, options: System.StringSplitOptions.RemoveEmptyEntries)[0];
-
-            return new PathInfo
-            {
-                PathTags = pathOnly.TrimEnd(new char[] { '\\', '|', '/' }),
-                PathSeperator = pathSeperatorSymbol,
-                FileExtension = extension,
-                MimeType = MimeHelper.GetMimeType(extension),
-                Filename = fileName + extension,
-                FilenameNoExtension = fileName,
-                RelativeFilePath = relativeFileLocation,
-            };
         }
 
         public static string SetPathSeparator(this string filePath, char pathSeparator)
