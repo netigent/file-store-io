@@ -54,7 +54,7 @@ namespace Netigent.Utils.FileStoreIO
             _filePrefix = fileIOConfig.Value.FilePrefix ?? _notSpecifiedFlag;
             _appPrefix = fileIOConfig.Value.AppPrefix ?? string.Empty;
             _maxVersions = fileIOConfig.Value.MaxVersions > 1 ? fileIOConfig.Value.MaxVersions : 1;
-            _dbClient = new InternalDatabaseClient(fileIOConfig.Value.Database, fileIOConfig.Value.DatabaseSchema);
+            _dbClient = new InternalDatabaseClient(fileIOConfig.Value.Database, fileIOConfig.Value.DatabaseSchema, _appPrefix);
             _defaultStorage = fileIOConfig.Value.DefaultStorage != FileStorageProvider.UseDefault
                 ? fileIOConfig.Value.DefaultStorage
                 : FileStorageProvider.Database;
@@ -96,7 +96,7 @@ namespace Netigent.Utils.FileStoreIO
                 : FileStorageProvider.Database;
 
             //Create the filestore client
-            _dbClient = new InternalDatabaseClient(databaseConnection, dbSchema);
+            _dbClient = new InternalDatabaseClient(databaseConnection, dbSchema, _appPrefix);
             IsReady = Internal_StartupCheck();
 
             if (IsReady)

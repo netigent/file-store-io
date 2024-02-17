@@ -236,13 +236,16 @@ internal class Program
             return false;
         }
 
-        LogMessage($"Confirm you want to BUILD FILE INDEX ON '{sp}' scoped to {fileStoreIOConfig.Value.AppPrefix}, this may take a long time.......... (y/n)?", true, ConsoleColor.Cyan);
-
+        LogMessage($"Confirm you want to BUILD FILE INDEX ON '{sp}', this may take a long time.......... (y/n)?", true, ConsoleColor.Cyan);
         string confirm = (Console.ReadLine() ?? "").Trim().ToLower();
+
+        LogMessage($"Should we limit indexing to the root '{fileStoreIOConfig.Value.AppPrefix}' (y/n)?", true, ConsoleColor.Cyan);
+        string limitToScope = (Console.ReadLine() ?? "").Trim().ToLower();
 
         if (confirm == "y")
         {
-            var result = await _client.File_IndexAsync(sp ?? FileStorageProvider.UseDefault, scopeToAppPrefix: !string.IsNullOrEmpty(fileStoreIOConfig.Value.AppPrefix));
+
+            var result = await _client.File_IndexAsync(sp ?? FileStorageProvider.UseDefault, scopeToAppPrefix: !string.IsNullOrEmpty(fileStoreIOConfig.Value.AppPrefix) && limitToScope == "y");
 
             LogMessage("");
             LogMessage("================");
