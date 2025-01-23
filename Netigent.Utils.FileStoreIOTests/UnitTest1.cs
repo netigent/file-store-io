@@ -7,8 +7,9 @@ using Netigent.Utils.FileStoreIO.Enums;
 using Netigent.Utils.FileStoreIO.Models;
 using Newtonsoft.Json;
 
-namespace FileStoreIO.Tests
+namespace Netigent.Utils.FileStoreIOTests
 {
+
     public class TestSet
     {
         #region Members
@@ -18,14 +19,23 @@ namespace FileStoreIO.Tests
         private const string _largeFile = ".\\TestFiles\\whiteVid_37MB.mp4";
         private const string _stdPdfFile = ".\\TestFiles\\pdf_180KB.pdf";
         private const string _stdImgFile = ".\\TestFiles\\photo_A_3MB.jpg";
+        private const string _fsLocation = "c:\\temp\\";
 
-        private const string _dbConnection = "Server=.;Database=myDatabase;UID=mySa;PWD=myPassword;";
+        private static readonly string[] _filesCollection =
+        [
+            @".\TestFiles\TestGifFile_88MB.gif",
+            @".\TestFiles\whiteVid_37MB.mp4",
+            @".\TestFiles\pdf_180KB.pdf",
+            @".\TestFiles\photo_A_3MB.jpg"
+        ];
+
+        private const string _dbConnection = "Server=.;Database=myDatabase;UID=mySa;PWD=myPassword;TrustServerCertificate=True;";
         private const string _dbSchema = "fileStore";
         private S3Config _s3Config;
         private BoxConfig _boxConfig;
         private FileSystemConfig _fsConfig;
         private int _maxVersionsOfFileToKeep = 10;
-        private const string _appPrefix = "TestAppInSky";
+        private const string _appPrefix = "";
 
         private const string outputLog = "testingLog.txt";
         #endregion
@@ -34,16 +44,16 @@ namespace FileStoreIO.Tests
         [SetUp]
         public void Setup()
         {
-            // My S3
+            // FPDC S3
             _s3Config = new S3Config()
             {
                 AccessKey = "ExampleAccessKey",
-                BucketName = "my-example-bucket-name",
+                SecretKey = "mysecretkeyinhere+",
                 Region = "us-west-2",
-                SecretKey = "mysecretkeyinhere",
+                BucketName = "my-example-bucket-name"
             };
 
-            // My Boxx
+            // IBKS Dev Box
             _boxConfig = new BoxConfig()
             {
                 EnterpriseID = "123456789",
@@ -58,12 +68,12 @@ namespace FileStoreIO.Tests
                         PublicKeyID = "abc1234",
                     },
                 },
-                TimeoutInMins = 15,
+                AutoCreateRoot = true
             };
 
             _fsConfig = new FileSystemConfig()
             {
-                RootFolder = @"C:\temp\Files\",
+                RootFolder = _fsLocation,
                 StoreFileAsUniqueRef = false,
             };
 
@@ -442,6 +452,193 @@ namespace FileStoreIO.Tests
 
             SaveToLogs(migrateFileResult);
             Assert.That(migrateFileResult.Success, migrateFileResult.Messages.First());
+        }
+
+        // Database
+        [TestCase(FileStorageProvider.Database, "/Database/Project 1/Budget Files", _largeFile, _appPrefix)]
+        [TestCase(FileStorageProvider.Database, "/Database/Project 1/Progress Photos", _xlargeFile, _appPrefix)]
+        [TestCase(FileStorageProvider.Database, "/Database/Project 2/Progress Photos", _stdImgFile, _appPrefix)]
+        [TestCase(FileStorageProvider.Database, "\\Database\\Project A\\Budget Files", _stdImgFile, _appPrefix)]
+        [TestCase(FileStorageProvider.Database, "\\Database\\Project A\\Progress Photos", _stdImgFile, _appPrefix)]
+        [TestCase(FileStorageProvider.Database, "\\Database\\Project B\\Progress Photos", _stdImgFile, _appPrefix)]
+        [TestCase(FileStorageProvider.Database, "Database|Project Z1|Budget Files", _stdImgFile, _appPrefix)]
+        [TestCase(FileStorageProvider.Database, "Database|Project Z1|Progress Photos", _stdImgFile, _appPrefix)]
+        [TestCase(FileStorageProvider.Database, "Database|Project Z2|Progress Photos", _stdImgFile, _appPrefix)]
+
+        // FileSystem
+        [TestCase(FileStorageProvider.FileSystem, "/FolderStore/Project 1/Budget Files", _largeFile, _appPrefix)]
+        [TestCase(FileStorageProvider.FileSystem, "/FolderStore/Project 1/Progress Photos", _stdImgFile, _appPrefix)]
+        [TestCase(FileStorageProvider.FileSystem, "/FolderStore/Project 2/Progress Photos", _stdImgFile, _appPrefix)]
+        [TestCase(FileStorageProvider.FileSystem, "\\FolderStore\\Project A\\Budget Files", _stdImgFile, _appPrefix)]
+        [TestCase(FileStorageProvider.FileSystem, "\\FolderStore\\Project A\\Progress Photos", _stdImgFile, _appPrefix)]
+        [TestCase(FileStorageProvider.FileSystem, "\\FolderStore\\Project B\\Progress Photos", _stdImgFile, _appPrefix)]
+        [TestCase(FileStorageProvider.FileSystem, "FolderStore|Project Z1|Budget Files", _stdImgFile, _appPrefix)]
+        [TestCase(FileStorageProvider.FileSystem, "FolderStore|Project Z1|Progress Photos", _xlargeFile, _appPrefix)]
+        [TestCase(FileStorageProvider.FileSystem, "FolderStore|Project Z2|Progress Photos", _xlargeFile, _appPrefix)]
+
+        // AWS
+        [TestCase(FileStorageProvider.S3, "/S3/Project 1/Budget Files", _stdImgFile, _appPrefix)]
+        [TestCase(FileStorageProvider.S3, "/S3/Project 1/Progress Photos", _stdImgFile, _appPrefix)]
+        [TestCase(FileStorageProvider.S3, "/S3/Project 2/Progress Photos", _stdImgFile, _appPrefix)]
+        [TestCase(FileStorageProvider.S3, "\\S3\\Project A\\Budget Files", _stdImgFile, _appPrefix)]
+        [TestCase(FileStorageProvider.S3, "\\S3\\Project A\\Progress Photos", _stdImgFile, _appPrefix)]
+        [TestCase(FileStorageProvider.S3, "\\S3\\Project B\\Progress Photos", _stdImgFile, _appPrefix)]
+        [TestCase(FileStorageProvider.S3, "S3|Project Z1|Budget Files", _stdImgFile, _appPrefix)]
+        [TestCase(FileStorageProvider.S3, "S3|Project Z1|Progress Photos", _stdImgFile, _appPrefix)]
+        [TestCase(FileStorageProvider.S3, "S3|Project Z2|Progress Photos", _stdImgFile, _appPrefix)]
+        public void BulkMixedPopulation(FileStorageProvider fsp, string saveAsFolderPath, string uploadingFile, string appPrefix)
+        {
+            DateTime start = DateTime.UtcNow;
+
+            FileStorageProvider p = fsp;
+
+            string fileAbsolutePath = Path.GetFullPath(uploadingFile);
+            FileInfo fi = new FileInfo(fileAbsolutePath);
+            byte[] contents = File.ReadAllBytes(fi.FullName);
+
+            string fileRef = _client.File_UpsertAsyncV2(
+                relationalFilePathAndName: $"{saveAsFolderPath}/{fi.Name}",
+                fileContents: contents,
+                fileStorageProvider: p).Result;
+
+            var results = _client.File_GetVersionsInfo(fileRef);
+
+            double taken = (DateTime.UtcNow - start).TotalSeconds;
+
+            Assert.That(results.FirstOrDefault(x => x.FileLocation == (int)fsp)?.SizeInBytes == contents.LongLength);
+            string outcome = $"Upload Provider: {fsp}, Size: {contents.LongLength / 1024}kb, Time: {taken}secs";
+        }
+
+        // Database
+        [TestCase(FileStorageProvider.Database, "/Database/Project M/Budget Files")]
+
+        // FileSystem
+        [TestCase(FileStorageProvider.FileSystem, "\\FolderStore\\Project M\\Budget Files")]
+
+        // AWS
+        [TestCase(FileStorageProvider.S3, "|S3|Project M|Budget Files")]
+
+        public void LoopingLoaderPopulation(FileStorageProvider defaultStore, string saveAsFolderPath)
+        {
+            DateTime start = DateTime.UtcNow;
+
+            foreach (var item in _filesCollection)
+            {
+                string fileAbsolutePath = Path.GetFullPath(item);
+                FileInfo fi = new FileInfo(fileAbsolutePath);
+                byte[] contents = File.ReadAllBytes(fi.FullName);
+
+                string fileRef = _client.File_UpsertAsyncV2($"{saveAsFolderPath}/{fi.Name}", contents, defaultStore).Result;
+            }
+
+            double taken = (DateTime.UtcNow - start).TotalSeconds;
+        }
+
+        // Query format testing
+        [TestCase("FolderStore|Project 1|Budget Files")]
+        [TestCase("FolderStore|Project 1")]
+        [TestCase("FolderStore")]
+        [TestCase("S3")]
+
+        [TestCase("\\FolderStore\\Project 1\\Budget Files")]
+        [TestCase("\\FolderStore\\Project 1")]
+        [TestCase("\\FolderStore")]
+        [TestCase("\\DATABASE")]
+
+        [TestCase("FolderStore/Project 1/Budget Files")]
+        [TestCase("FolderStore/Project 1")]
+        [TestCase("FolderStore/")]
+        [TestCase("/")]
+
+        public void QueryTestingAndDownload(string folderQuery)
+        {
+            DateTime start = DateTime.UtcNow;
+
+            var fileList = _client.Files_GetAllV2(folderQuery);
+            int i = 0;
+            foreach (var item in fileList)
+            {
+                try
+                {
+                    var fileContents = _client.File_GetAsyncV2(item.FileRef).Result;
+                    if (fileContents?.Data?.Length > 0)
+                    {
+                        i++;
+                    }
+                    else
+                    {
+                        throw new Exception("Failed to get file");
+                    }
+                }
+                catch (Exception e)
+                {
+                    throw e;
+                }
+            }
+
+
+            double taken = (DateTime.UtcNow - start).TotalSeconds;
+            Assert.That(fileList?.Count > 0 && fileList.Count == i, "Delete failed");
+        }
+
+
+        // Query format testing
+        [TestCase("FolderStore|Project 1|Budget Files")]
+        [TestCase("FolderStore|Project 1")]
+        [TestCase("FolderStore")]
+        [TestCase("")]
+
+        [TestCase("\\FolderStore\\Project 1\\Budget Files")]
+        [TestCase("\\FolderStore\\Project 1")]
+        [TestCase("\\FolderStore")]
+        [TestCase("\\")]
+
+        [TestCase("FolderStore/Project 1/Budget Files")]
+        [TestCase("FolderStore/Project 1")]
+        [TestCase("FolderStore/")]
+        [TestCase("/")]
+
+        public void QueryTestingAndDownloadMultipleINs(string folderQuery)
+        {
+            DateTime start = DateTime.UtcNow;
+
+            var fileList = _client.Files_GetAllV2(folderQuery);
+            int i = 0;
+
+            foreach (var item in fileList)
+            {
+
+                IFileStoreIOClient localClient = new FileStoreIOClient(
+                    appPrefix: _appPrefix,
+                    databaseConnection: _dbConnection,
+                    maxVersions: _maxVersionsOfFileToKeep,
+                    dbSchema: _dbSchema,
+                    defaultFileStore: FileStorageProvider.Database,
+                    boxConfig: _boxConfig,
+                    s3Config: _s3Config,
+                    fileSystemConfig: _fsConfig);
+
+                try
+                {
+                    var fileContents = localClient.File_GetAsyncV2(item.FileRef).Result;
+                    if (fileContents?.Data?.Length > 0)
+                    {
+                        i++;
+                    }
+                    else
+                    {
+                        throw new Exception("Failed to get file");
+                    }
+                }
+                catch (Exception e)
+                {
+                    throw e;
+                }
+            }
+
+
+            double taken = (DateTime.UtcNow - start).TotalSeconds;
+            Assert.That(fileList?.Count > 0 && fileList.Count == i, "Delete failed");
         }
 
 

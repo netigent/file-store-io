@@ -4,8 +4,6 @@ VisualStudioVersion = 17.3.32929.385
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Netigent.Utils.FileStoreIO", "Netigent.Utils.FileStoreIO\Netigent.Utils.FileStoreIO.csproj", "{DCF77556-387F-4FD3-A64D-071B9C8617B7}"
 EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "FileStoreIO.Tests", "FileStoreIO.Tests\FileStoreIO.Tests.csproj", "{F8003A1B-3A9A-4BFF-AC29-1F22C1123F50}"
-EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution Items", "{C08CB67F-B062-4E80-BF41-CC1A33EAA13F}"
 	ProjectSection(SolutionItems) = preProject
 		nuget.config = nuget.config
@@ -13,6 +11,8 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution 
 	EndProjectSection
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Netigent.Utils.FileMigration", "Netigent.Utils.FileMigration\Netigent.Utils.FileMigration.csproj", "{3DD8176F-114C-4288-B6B5-AD8E732C94C0}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Netigent.Utils.FileStoreIOTests", "Netigent.Utils.FileStoreIOTests\Netigent.Utils.FileStoreIOTests.csproj", "{4384AAA8-7A50-4353-8005-A53E100D437B}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -24,10 +24,12 @@ Global
 		{DCF77556-387F-4FD3-A64D-071B9C8617B7}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{DCF77556-387F-4FD3-A64D-071B9C8617B7}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{DCF77556-387F-4FD3-A64D-071B9C8617B7}.Release|Any CPU.Build.0 = Release|Any CPU
-		{F8003A1B-3A9A-4BFF-AC29-1F22C1123F50}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{F8003A1B-3A9A-4BFF-AC29-1F22C1123F50}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{3DD8176F-114C-4288-B6B5-AD8E732C94C0}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{3DD8176F-114C-4288-B6B5-AD8E732C94C0}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{4384AAA8-7A50-4353-8005-A53E100D437B}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{4384AAA8-7A50-4353-8005-A53E100D437B}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{4384AAA8-7A50-4353-8005-A53E100D437B}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{4384AAA8-7A50-4353-8005-A53E100D437B}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

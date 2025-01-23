@@ -32,7 +32,7 @@ namespace Netigent.Utils.FileStoreIO.Extensions
 
         public static PathInfo GetPathInfo(this string filePath, string addRootFolderPrefix = "", string removeRootFolderPrefix = "")
         {
-            var relativeFileLocation = Path.Combine(addRootFolderPrefix, filePath);
+            var relativeFileLocation = Path.Combine(addRootFolderPrefix, filePath.DropFirstChar(new char[] { '\\', '|', '/' }));
 
             var fileName = Path.GetFileNameWithoutExtension(relativeFileLocation);
             var extension = Path.GetExtension(relativeFileLocation);

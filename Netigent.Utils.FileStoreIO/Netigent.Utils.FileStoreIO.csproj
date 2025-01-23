@@ -1,9 +1,9 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
 	<PropertyGroup>
-		<TargetFrameworks>net7.0;netstandard2.0</TargetFrameworks>
-		<Version>1.1.5</Version>
-		<LangVersion>10.0</LangVersion>
+		<TargetFrameworks>net8.0;netstandard2.0</TargetFrameworks>
+		<Version>1.1.7</Version>
+		<LangVersion>12.0</LangVersion>
 		<GeneratePackageOnBuild>True</GeneratePackageOnBuild>
 		<Nullable>enable</Nullable>
 		<!--<WarningsAsErrors>CS8600;CS8602;CS8603</WarningsAsErrors>-->
@@ -11,21 +11,21 @@
 	</PropertyGroup>
 
 	<ItemGroup>
-		<PackageReference Include="AWSSDK.S3" Version="3.7.305.26" />
-		<PackageReference Include="BouncyCastle.Cryptography" Version="2.3.0" />
-		<PackageReference Include="Dapper" Version="2.1.28" />
-		<PackageReference Include="Microsoft.AspNetCore.Http.Features" Version="3.1.32" />
-		<PackageReference Include="Microsoft.Extensions.Options" Version="7.0.1" />
+		<PackageReference Include="AWSSDK.S3" Version="3.7.412.4" />
+		<PackageReference Include="BouncyCastle.Cryptography" Version="2.5.0" />
+		<PackageReference Include="Dapper" Version="2.1.44" />
+		<PackageReference Include="Microsoft.AspNetCore.Http.Features" Version="5.0.17" />
+		<PackageReference Include="Microsoft.Extensions.Options" Version="9.0.1" />
 		<PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
-		<PackageReference Include="System.Data.SqlClient" Version="4.8.6" />
-		<PackageReference Include="System.IdentityModel.Tokens.Jwt" Version="7.3.1" />
+		<PackageReference Include="System.Data.SqlClient" Version="4.9.0" />
+		<PackageReference Include="System.IdentityModel.Tokens.Jwt" Version="8.3.1" />
 	</ItemGroup>
 
 	<ItemGroup>
-	  <Folder Include="Docs\" />
+		<Folder Include="Docs\" />
 	</ItemGroup>
 
 	<ItemGroup>
-	  <None Include="..\README.md" Link="Docs\README.md" Pack="true" PackagePath="\" />
+		<None Include="..\README.md" Link="Docs\README.md" Pack="true" PackagePath="\" />
 	</ItemGroup>
 </Project>

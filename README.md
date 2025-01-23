@@ -8,6 +8,13 @@ In terms of using the Library the following should get you up and running quickl
 **Database** The library will autocreate and upgrade filestore table {schema}.[FileStoreIndex]. You can then manually remove column no longer used [FileType], [MainGroup] ,[SubGroup] from [FileStoreIndex] if you want - they're longer used!
 
 # Version Changes
+**1.1.7** Bug fix for AppPrefix setting not populating correctly. Upgraded .net to 8.0 LTS support and various internal package upgrades.
+
+**1.1.6** Database Migration update, include AppPrefix into PathTags column, if you implemented v1.1.5 and are using AppPrefix and your files have 'disappeared', then run (this will apply update to ensure files show again)
+```
+UPDATE {schema}.[FileStoreIndex] SET PathTags = '{AppPrefix}/' + PathTags WHERE PathTags NOT LIKE '{AppPrefix}%'
+```
+
 **1.1.5** Readme updates and stablization updates.
 
 **1.1.4** Internal database upgrade.

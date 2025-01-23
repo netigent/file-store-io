@@ -13,12 +13,15 @@ namespace Netigent.Utils.FileStoreIO.Dal
         public bool IsReady;
 
         private readonly string _schemaName;
+        private readonly string _appPrefix;
+
         private string _managementConnection { get; }
 
-        public InternalDatabaseClient(string sqlManagementConnection, string schemaName)
+        public InternalDatabaseClient(string sqlManagementConnection, string schemaName, string appPrefix)
         {
             _managementConnection = sqlManagementConnection;
             _schemaName = schemaName;
+            _appPrefix = appPrefix;
 
             IsReady = InitializeDatabase(out string errorMessage);
             DbClientErrorMessage = errorMessage;
@@ -160,7 +163,23 @@ namespace Netigent.Utils.FileStoreIO.Dal
 								ALTER TABLE [{_schemaName}].[FileStoreIndex] ADD
 								[PathTags] [varchar](2048) NULL
 							
-								EXEC('UPDATE [{_schemaName}].[FileStoreIndex] SET [PathTags] = REPLACE(IsNull([MainGroup], '''') + ''/'' + IsNull([SubGroup], ''''), ''//'', ''/'')')
+								EXEC('
+                                        UPDATE [{_schemaName}].[FileStoreIndex]
+                                        SET [PathTags] =
+                                        REPLACE(
+                                          CONCAT(
+	                                        CASE 
+		                                        WHEN IsNull(''{_appPrefix}'', '''') != ''''
+		                                        THEN ''{_appPrefix}/'' 
+		                                        ELSE ''''
+	                                        END,
+	                                        CASE 
+		                                        WHEN IsNull([MainGroup], '''') != '''' AND IsNull([SubGroup], '''') != ''''
+		                                        THEN [MainGroup] + ''/'' + [SubGroup]
+		                                        ELSE IsNull([MainGroup], '''') + '''' + IsNull([SubGroup], '''')
+	                                        END)
+                                        , ''//'', ''/'')
+                                    ')
 
                                 EXEC('sp_rename ''{_schemaName}.FileStoreIndex.FilePath'', ''ExtClientRef'', ''COLUMN''')
 							END
