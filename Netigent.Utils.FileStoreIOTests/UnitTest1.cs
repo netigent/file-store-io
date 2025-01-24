@@ -357,7 +357,7 @@ namespace Netigent.Utils.FileStoreIOTests
                 s3Config: _s3Config,
                 fileSystemConfig: _fsConfig);
 
-            var mostRecentFileRecordFromStore = localClient.Files_GetAll("")
+            var mostRecentFileRecordFromStore = localClient.Files_GetAllV2("")
                 .OrderByDescending(x => x.Modified)
                 .FirstOrDefault(x => x.FileLocation == (int)defaultStore);
 
@@ -583,6 +583,7 @@ namespace Netigent.Utils.FileStoreIOTests
 
 
         // Query format testing
+        [TestCase("S3/Project 1")]
         [TestCase("FolderStore|Project 1|Budget Files")]
         [TestCase("FolderStore|Project 1")]
         [TestCase("FolderStore")]
@@ -602,7 +603,7 @@ namespace Netigent.Utils.FileStoreIOTests
         {
             DateTime start = DateTime.UtcNow;
 
-            var fileList = _client.Files_GetAllV2(folderQuery);
+            var fileList = _client.Files_GetAllV2(folderQuery, false);
             int i = 0;
 
             foreach (var item in fileList)
