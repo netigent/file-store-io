@@ -172,7 +172,7 @@ internal class Program
         LogMessage("================");
 
 
-        var fileList = _client.Files_GetAll("");
+        var fileList = _client.Files_GetAllV2("");
         if (fileList?.Count > 0)
         {
             var uFiles = fileList.DistinctBy(x => x.FileRef).ToList();
@@ -201,7 +201,7 @@ internal class Program
         LogMessage("================");
 
 
-        var fileList = _client.Files_GetAll("");
+        var fileList = _client.Files_GetAllV2("");
         if (fileList?.Count > 0)
         {
             var uFiles = fileList.DistinctBy(x => x.FileRef).ToList();
@@ -268,7 +268,7 @@ internal class Program
         LogMessage("Verfiy ALL Files (this maybe take some time!!):");
         LogMessage("================");
 
-        var fileList = _client.Files_GetAll("");
+        var fileList = _client.Files_GetAllV2("");
         if (fileList?.Count > 0)
         {
             var uFiles = fileList.DistinctBy(x => x.FileRef).ToList();
@@ -419,7 +419,7 @@ internal class Program
         {
             if (allFiles)
             {
-                var fileList = _client.Files_GetAll("");
+                var fileList = _client.Files_GetAllV2("");
                 int tFiles = fileList.Count;
                 LogMessage($"{opType1} {tFiles}x files to {sp} ");
                 if (tFiles > 0)

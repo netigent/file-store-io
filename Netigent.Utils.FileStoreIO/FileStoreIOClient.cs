@@ -201,8 +201,8 @@ namespace Netigent.Utils.FileStoreIO
                 created: created);
 
         /// <inheritdoc/>
-        public List<InternalFileModel> Files_GetAllV2(string[] pathTags) =>
-           Files_GetAllV2(relationalFilePath: $"{string.Join(SystemConstants.InternalDirectorySeparator.ToString(), pathTags)}");
+        public List<InternalFileModel> Files_GetAllV2(string[] pathTags, bool recursiveSearch = true) =>
+           Files_GetAllV2(relationalFilePath: $"{string.Join(SystemConstants.InternalDirectorySeparator.ToString(), pathTags)}", recursiveSearch);
 
         /// <inheritdoc />
         public async Task<FileObjectModel> File_GetAsyncV2(string fileRef, int priorVersion = 0)
@@ -237,17 +237,17 @@ namespace Netigent.Utils.FileStoreIO
         }
 
         /// <inheritdoc/>
-        public List<InternalFileModel> Files_GetAllV2(string relationalFilePath)
+        public List<InternalFileModel> Files_GetAllV2(string relationalFilePath, bool recursiveSearch = true)
         {
             if (!string.IsNullOrEmpty(_appPrefix) &&
-                !relationalFilePath.StartsWith(_appPrefix) &&
+                !relationalFilePath.DropFirstChar(new char[] { '\\', '|', '/' }).StartsWith(_appPrefix) &&
                 PathExtension.IsRelativePath(relationalFilePath))
             {
-                return _dbClient.FileStoreIndex_GetAllByLocation(pathToSearch: $"{_appPrefix}{SystemConstants.InternalDirectorySeparator}{relationalFilePath}");
+                return _dbClient.FileStoreIndex_GetAllByLocation(pathToSearch: $"{_appPrefix}{SystemConstants.InternalDirectorySeparator}{relationalFilePath}", recursiveSearch);
             }
             else
             {
-                return _dbClient.FileStoreIndex_GetAllByLocation(pathToSearch: relationalFilePath);
+                return _dbClient.FileStoreIndex_GetAllByLocation(pathToSearch: relationalFilePath, recursiveSearch);
             }
         }
 
@@ -454,7 +454,7 @@ namespace Netigent.Utils.FileStoreIO
 
             // if files exist with same name, extension and fullFilePath, then consider it the same file,
             // Its upto the write2file etc to store as versioned
-            var existingFilesList = Files_GetAll(fileObject.PathTags.SetPathSeparator(SystemConstants.InternalDirectorySeparator)).Where(x =>
+            var existingFilesList = Files_GetAllV2(fileObject.PathTags.SetPathSeparator(SystemConstants.InternalDirectorySeparator)).Where(x =>
                 x.Extension.Equals(fileObject.Extension, StringComparison.InvariantCultureIgnoreCase) &&
                 x.Name.StartsWith(fileObject.Name, StringComparison.InvariantCultureIgnoreCase));
 
@@ -703,61 +703,8 @@ namespace Netigent.Utils.FileStoreIO
         private IClient? Internal_GetClient(int storeTypeId)
         {
             StoreProviderDef? factory = StoreProvidersList.FirstOrDefault(x => x.StoreTypeId == storeTypeId);
-            return factory.GetClient();
+            return factory?.GetClient();
         }
-        #endregion
-
-        #region Legacy Repointers
-
-        /// <inheritdoc/>
-        public async Task<string> File_UpsertAsync(
-            byte[] fileContents,
-            string fullFilename,
-            FileStorageProvider fileLocation = FileStorageProvider.UseDefault,
-            string description = "",
-            string mainGroup = "",
-            string subGroup = "",
-            DateTime created = default) =>
-
-            // Repoint to new method
-            await File_UpsertAsyncV2(
-                relationalFilePathAndName: $"{mainGroup}/{subGroup}/{fullFilename}",
-                fileContents: fileContents,
-                fileStorageProvider: fileLocation,
-                description: description,
-                created: created);
-
-        /// <inheritdoc/>
-        public async Task<string> File_UpsertAsync(
-            IFormFile file,
-            FileStorageProvider fileLocation = FileStorageProvider.UseDefault,
-            string description = "",
-            string mainGroup = "",
-            string subGroup = "") =>
-
-            // Repoint to new method
-            await File_UpsertAsyncV2(
-                relationalFilePathAndName: $"{mainGroup}/{subGroup}",
-                file: file,
-                fileStorageProvider: fileLocation,
-                description: description);
-
-        /// <inheritdoc/>
-        public async Task<FileObjectModel> File_Get(string fileRef, int goBackVersions = 0) =>
-            await File_GetAsyncV2(fileRef, goBackVersions);
-
-        /// <inheritdoc/>
-        public List<InternalFileModel> Files_GetAll(string mainGroup = "", string subGroup = "")
-        {
-            if (!string.IsNullOrEmpty(mainGroup) && !string.IsNullOrEmpty(subGroup))
-            {
-                return Files_GetAllV2(relationalFilePath: $"{mainGroup}{SystemConstants.InternalDirectorySeparator}{subGroup}");
-            }
-
-            return Files_GetAllV2(relationalFilePath: $"{mainGroup}{subGroup}");
-        }
-
-
         #endregion
     }
 }

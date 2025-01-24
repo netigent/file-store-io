@@ -14,7 +14,7 @@ namespace Netigent.Utils.FileStoreIO.Dal
         /// </summary>
         /// <param name="pathToSearch">FilePath e.g. '816', '/816/Signed Approval Template/', '/816/Signed Approval Template/SignoffTemplate.PDF' or '816/Signed Approval Template/SignoffTemplatev2.PDF'</param>
         /// <returns></returns>
-        internal List<InternalFileModel> FileStoreIndex_GetAllByLocation(string pathToSearch)
+        internal List<InternalFileModel> FileStoreIndex_GetAllByLocation(string pathToSearch, bool recursiveSearch)
         {
             // WARNING: Never getdata from here, file could be stored in DB, will kill performancc
             string queryDef = $@"
@@ -25,6 +25,7 @@ namespace Netigent.Utils.FileStoreIO.Dal
                     --DECLARE @PathToSearch varchar(500) = '/4554/Invoice/'
                     --DECLARE @PathToSearch varchar(500) = '/4565'
                     --DECLARE @PathToSearch varchar(500) = '4550'
+                    --DECLARE @RecursiveMode bit = 1
                     
                     DECLARE @pathSep varchar(1) = '{SystemConstants.InternalDirectorySeparator}'
 
@@ -45,14 +46,24 @@ namespace Netigent.Utils.FileStoreIO.Dal
                     FROM [{_schemaName}].[FileStoreIndex]
                     WHERE
                     (
-	                    -- MainGroup is PathType i.e. HR/Training/Sales, would get HR/Training/Sales/John + Mary etc
-	                    REPLACE(CONCAT(@pathSep, IsNull([PathTags],''),@pathSep, [Name], Extension),CONCAT(@pathSep,@pathSep),@pathSep)
-	                    LIKE
-	                    REPLACE(CONCAT(@pathSep, @PathToSearch),CONCAT(@pathSep,@pathSep),@pathSep) + '%'
+                    @RecursiveMode = 1 AND
+                        -- MainGroup is PathType i.e. HR/Training/Sales, would get HR/Training/Sales/John + Mary etc
+                        REPLACE(CONCAT(@pathSep, IsNull([PathTags],''),@pathSep, [Name], Extension),CONCAT(@pathSep,@pathSep),@pathSep)
+                        LIKE
+                        REPLACE(CONCAT(@pathSep, @PathToSearch),CONCAT(@pathSep,@pathSep),@pathSep) + '%'
+                    )
+                    OR
+                    (
+                    @RecursiveMode = 0 AND
+                        -- MainGroup is PathType i.e. HR/Training/Sales, would get HR/Training/Sales/John + Mary etc
+                        REPLACE(CONCAT(@pathSep, IsNull([PathTags],''),@pathSep),CONCAT(@pathSep,@pathSep),@pathSep)
+                        =
+                        REPLACE(CONCAT(@pathSep, @PathToSearch,@pathSep),CONCAT(@pathSep,@pathSep),@pathSep)
                     )";
 
             var queryParms = new DynamicParameters();
             queryParms.Add("@PathToSearch", pathToSearch.SetPathSeparator(SystemConstants.InternalDirectorySeparator));
+            queryParms.Add("@RecursiveMode", recursiveSearch);
             return RunQueryToList<InternalFileModel>(queryDef, queryParms);
         }
 

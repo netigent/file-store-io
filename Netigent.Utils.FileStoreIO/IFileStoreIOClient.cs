@@ -76,15 +76,17 @@ namespace Netigent.Utils.FileStoreIO
         /// Get All Files stored within the System, it'll return all indexed copies, whether in db, filesystem of elsewhere
         /// </summary>
         /// <param name="pathTags">string array of path sections in order e.g. new [] { "HR", "Training", "Sales", "myfile.pdf" }</param>
+        /// <param name="recursiveSearch">SubFolders and Tags</param>
         /// <returns></returns>
-        List<InternalFileModel> Files_GetAllV2(string[] pathTags);
+        List<InternalFileModel> Files_GetAllV2(string[] pathTags, bool recursiveSearch = true);
 
         /// <summary>
         /// Get All Files stored within the System, it'll return all indexed copies, whether in db, filesystem of elsewhere
         /// </summary>
         /// <param name="relationalFilePathAndName">Full path and filename with extension e.g. HR/Training/Sales/ gets everything in Sales director or Tags</param>
+        /// <param name="recursiveSearch">SubFolders and Tags</param>
         /// <returns></returns>
-        List<InternalFileModel> Files_GetAllV2(string relationalFilePathAndName);
+        List<InternalFileModel> Files_GetAllV2(string relationalFilePathAndName, bool recursiveSearch = true);
 
         /// <summary>
         /// Get File from where its stored, you can also go back X versions of the file.
@@ -123,51 +125,5 @@ namespace Netigent.Utils.FileStoreIO
         /// <param name="indexLocation">Where to store file, current options Box, FileSystem (UNC / Folder) or Database</param>
         /// <returns></returns>
         Task<ResultModel> File_IndexAsync(FileStorageProvider indexLocation, string indexFrom = "", bool scopeToAppPrefix = true);
-
-        #region Obselete Methods
-        /// <summary>
-        /// Insert / Update a File to the intended file storage
-        /// </summary>
-        /// <param name="fileContents">byte[] of the file contents.</param>
-        /// <param name="fullFilename">Filename with Extenstion.</param>
-        /// <param name="fileLocation">Where to store file, current options Box, FileSystem (UNC / Folder) or Database</param>
-        /// <param name="description">(Optional) Description of the file, if omitted, will use the filename</param>
-        /// <param name="mainGroup">(Optional) Used when storing to filesystem will store as \\myserver\filestore\{mainGroup}\{subGroup}\filename.ext</param>
-        /// <param name="subGroup">(Optional) Used when storing to filesystem will store as \\myserver\filestore\{mainGroup}\{subGroup}\filename.ext</param>
-        /// <param name="created">(Optional) Created Date/Time</param>
-        /// <returns>A unique file-reference for getting the file, if blank issues creating the file</returns>
-        [Obsolete(message: "This method is now obsolete, use File_UpsertAsyncV2", error: false)]
-        Task<string> File_UpsertAsync(byte[] fileContents, string fullFilename, FileStorageProvider fileLocation = FileStorageProvider.UseDefault, string description = "", string mainGroup = "", string subGroup = "", DateTime created = default);
-
-        /// <summary>
-        /// Insert / Update a File to the intended file storage
-        /// </summary>
-        /// <param name="file">File as an IFormFile bject</param>
-        /// <param name="fileLocation">Where to store file, current options Box, FileSystem (UNC / Folder) or Database</param>
-        /// <param name="description">(Optional) Description of the file, if omitted, will use the filename</param>
-        /// <param name="mainGroup">(Optional) Used when storing to filesystem will store as \\myserver\filestore\{mainGroup}\{subGroup}\filename.ext</param>
-        /// <param name="subGroup">(Optional) Used when storing to filesystem will store as \\myserver\filestore\{mainGroup}\{subGroup}\filename.ext</param>
-        /// <returns>A unique file-reference for getting the file, if blank issues creating the file</returns>
-        [Obsolete(message: "This method is now obsolete, use File_UpsertAsyncV2", error: false)]
-        Task<string> File_UpsertAsync(IFormFile file, FileStorageProvider fileLocation = FileStorageProvider.UseDefault, string description = "", string mainGroup = "", string subGroup = "");
-
-        /// <summary>
-        /// Get All Files stored within the System, it'll return all indexed copies, whether in db, filesystem of elsewhere
-        /// </summary>
-        /// <param name="mainGroup">Used when storing to filesystem will store as \\myserver\filestore\{mainGroup}\{subGroup}\filename.ext</param>
-        /// <param name="subGroup">(Optional) Used when storing to filesystem will store as \\myserver\filestore\{mainGroup}\{subGroup}\filename.ext</param>
-        /// <returns></returns>
-        [Obsolete(message: "This method is now obsolete, use Files_GetAllV2", error: false)]
-        List<InternalFileModel> Files_GetAll(string mainGroup = "", string subGroup = "");
-
-        /// <summary>
-        /// Get File from where its stored, you can also go back X versions of the file.
-        /// </summary>
-        /// <param name="fileRef">FileRef assigned e.g. _$5352532555325</param>
-        /// <param name="goBackVersions">If you have history enabled, number of versons to go back, 0 = Current, 1 = Last, 2 = 2nd Last and so on.</param>
-        /// <returns></returns>
-        [Obsolete(message: "This method is now obsolete, use File_GetAsyncV2", error: false)]
-        Task<FileObjectModel> File_Get(string fileRef, int goBackVersions = 0);
-        #endregion
     }
 }
