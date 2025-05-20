@@ -32,7 +32,7 @@ namespace Netigent.Utils.FileStoreIOTests
             @".\TestFiles\photo_A_3MB.jpg"
         ];
 
-        private const string _dbConnection = "Server=.;Database=TestDb2;UID=sa;PWD=abc1234==DEV;TrustServerCertificate=True;";
+        private const string _dbConnection = "Server=.;Database=myDatabase;UID=mySa;PWD=myPassword;TrustServerCertificate=True;";
         private const string _dbSchema = "fileStore";
         private S3Config _s3Config;
         private BoxConfig _boxConfig;
