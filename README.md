@@ -8,6 +8,11 @@ In terms of using the Library the following should get you up and running quickl
 **Database** The library will autocreate and upgrade filestore table {schema}.[FileStoreIndex]. You can then manually remove column no longer used [FileType], [MainGroup] ,[SubGroup] from [FileStoreIndex] if you want - they're longer used!
 
 # Version Changes
+**1.2.1** Bug fix Subfile, gets replaced by single Parent. RecursiveSearch = false is now default, if you want a list of all files, including subFolders then set as true.
+```
+Files_GetAllV2(string[] pathTags, bool recursiveSearch = false);
+Files_GetAllV2(string relationalFilePathAndName, bool recursiveSearch = false);
+```
 **1.2.0** Recursive flag has been added to Files_GetAllV2. Obsolete legacy methods have been removed.
 
 **1.1.7** Bug fix for AppPrefix setting not populating correctly. Upgraded .net to 8.0 LTS support and various internal package upgrades.

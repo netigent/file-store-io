@@ -27,7 +27,7 @@ namespace Netigent.Utils.FileStoreIO
         bool IsClientAvailable(FileStorageProvider fileStorageProvider);
 
         /// <summary>
-        /// Insert / Update a File to the intended file storage
+        /// Insert / Update a File (byte[]) to the intended file storage, by relationalPath e.g. HR/Training/Sales/myguide.pdf.
         /// </summary>
         /// <param name="relationalFilePathAndName">Full path and filename with extension e.g. HR/Training/Sales/myguide.pdf</param>
         /// <param name="fileContents">byte[] of the file contents.</param>
@@ -38,7 +38,7 @@ namespace Netigent.Utils.FileStoreIO
         Task<string> File_UpsertAsyncV2(string relationalFilePathAndName, byte[] fileContents, FileStorageProvider fileStorageProvider = FileStorageProvider.UseDefault, string description = "", DateTime created = default);
 
         /// <summary>
-        /// Insert / Update a File to the intended file storage
+        /// Insert / Update a File (IFormFile) to the intended file storage, by relationalPath e.g. HR/Training/Sales/myguide.pdf.
         /// </summary>
         /// <param name="relationalFilePathAndName">Full path and filename with extension e.g. HR/Training/Sales/myguide.pdf</param>
         /// <param name="file">File as an IFormFile bject</param>
@@ -49,7 +49,7 @@ namespace Netigent.Utils.FileStoreIO
         Task<string> File_UpsertAsyncV2(string relationalFilePathAndName, IFormFile file, FileStorageProvider fileStorageProvider = FileStorageProvider.UseDefault, string description = "", DateTime created = default);
 
         /// <summary>
-        /// Insert / Update a File to the intended file storage
+        /// Insert / Update a File (byte[]) to the intended file storage, by PathTags e.g. new [] { "HR", "Training", "Sales" }.
         /// </summary>
         /// <param name="fileContents">byte[] of the file contents.</param>
         /// <param name="filename">Filename with extension e.g. myfile.pdf</param>
@@ -61,7 +61,7 @@ namespace Netigent.Utils.FileStoreIO
         Task<string> File_UpsertAsyncV2(byte[] fileContents, string filename, string[] pathTags, FileStorageProvider fileStorageProvider = FileStorageProvider.UseDefault, string description = "", DateTime created = default);
 
         /// <summary>
-        /// Insert / Update a File to the intended file storage
+        /// Insert / Update a File (IFormFile) to the intended file storage, by PathTags e.g. new [] { "HR", "Training", "Sales" }.
         /// </summary>
         /// <param name="file">File as an IFormFile bject</param>
         /// <param name="filename">Filename with extension e.g. myfile.pdf</param>
@@ -78,7 +78,7 @@ namespace Netigent.Utils.FileStoreIO
         /// <param name="pathTags">string array of path sections in order e.g. new [] { "HR", "Training", "Sales", "myfile.pdf" }</param>
         /// <param name="recursiveSearch">SubFolders and Tags</param>
         /// <returns></returns>
-        List<InternalFileModel> Files_GetAllV2(string[] pathTags, bool recursiveSearch = true);
+        List<InternalFileModel> Files_GetAllV2(string[] pathTags, bool recursiveSearch = false);
 
         /// <summary>
         /// Get All Files stored within the System, it'll return all indexed copies, whether in db, filesystem of elsewhere
@@ -86,7 +86,7 @@ namespace Netigent.Utils.FileStoreIO
         /// <param name="relationalFilePathAndName">Full path and filename with extension e.g. HR/Training/Sales/ gets everything in Sales director or Tags</param>
         /// <param name="recursiveSearch">SubFolders and Tags</param>
         /// <returns></returns>
-        List<InternalFileModel> Files_GetAllV2(string relationalFilePathAndName, bool recursiveSearch = true);
+        List<InternalFileModel> Files_GetAllV2(string relationalFilePathAndName, bool recursiveSearch = false);
 
         /// <summary>
         /// Get File from where its stored, you can also go back X versions of the file.

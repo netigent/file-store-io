@@ -237,7 +237,7 @@ namespace Netigent.Utils.FileStoreIO
         }
 
         /// <inheritdoc/>
-        public List<InternalFileModel> Files_GetAllV2(string relationalFilePath, bool recursiveSearch = true)
+        public List<InternalFileModel> Files_GetAllV2(string relationalFilePath, bool recursiveSearch = false)
         {
             if (!string.IsNullOrEmpty(_appPrefix) &&
                 !relationalFilePath.DropFirstChar(new char[] { '\\', '|', '/' }).StartsWith(_appPrefix) &&
@@ -454,7 +454,10 @@ namespace Netigent.Utils.FileStoreIO
 
             // if files exist with same name, extension and fullFilePath, then consider it the same file,
             // Its upto the write2file etc to store as versioned
-            var existingFilesList = Files_GetAllV2(fileObject.PathTags.SetPathSeparator(SystemConstants.InternalDirectorySeparator)).Where(x =>
+            var existingFilesList = Files_GetAllV2(
+                relationalFilePath: fileObject.PathTags.SetPathSeparator(SystemConstants.InternalDirectorySeparator),
+                recursiveSearch: false)
+                .Where(x =>
                 x.Extension.Equals(fileObject.Extension, StringComparison.InvariantCultureIgnoreCase) &&
                 x.Name.StartsWith(fileObject.Name, StringComparison.InvariantCultureIgnoreCase));
 

@@ -19,6 +19,9 @@ namespace Netigent.Utils.FileStoreIOTests
         private const string _largeFile = ".\\TestFiles\\whiteVid_37MB.mp4";
         private const string _stdPdfFile = ".\\TestFiles\\pdf_180KB.pdf";
         private const string _stdImgFile = ".\\TestFiles\\photo_A_3MB.jpg";
+        private const string _txtFile1 = ".\\TestFiles\\TextFile1.txt";
+        private const string _txtFile2 = ".\\TestFiles\\TextFile2.txt";
+        private const string _txtFile3 = ".\\TestFiles\\TextFile3.txt";
         private const string _fsLocation = "c:\\temp\\";
 
         private static readonly string[] _filesCollection =
@@ -29,7 +32,7 @@ namespace Netigent.Utils.FileStoreIOTests
             @".\TestFiles\photo_A_3MB.jpg"
         ];
 
-        private const string _dbConnection = "Server=.;Database=myDatabase;UID=mySa;PWD=myPassword;TrustServerCertificate=True;";
+        private const string _dbConnection = "Server=.;Database=TestDb2;UID=sa;PWD=abc1234==DEV;TrustServerCertificate=True;";
         private const string _dbSchema = "fileStore";
         private S3Config _s3Config;
         private BoxConfig _boxConfig;
@@ -276,6 +279,56 @@ namespace Netigent.Utils.FileStoreIOTests
 
             string outcome = $"Upload Provider: {defaultStore}, Size: {contents.LongLength / 1024}kb, Time: {taken}secs";
 
+        }
+
+        //[TestCase(FileStorageProvider.FileSystem, _stdImgFile, _appPrefix)]
+        //[TestCase(FileStorageProvider.S3, _stdImgFile, _appPrefix)]
+        // [TestCase(FileStorageProvider.Box, _stdImgFile, _appPrefix)]
+
+        [TestCase(FileStorageProvider.FileSystem, _txtFile1, _appPrefix, "/tuesday/photo/folder1/myFile.txt")]
+        [TestCase(FileStorageProvider.FileSystem, _txtFile2, _appPrefix, "/tuesday/photo/myFile.txt")]
+        [TestCase(FileStorageProvider.FileSystem, _txtFile3, _appPrefix, "/tuesday/myFile.txt")]
+        //[TestCase(FileStorageProvider.S3, _largeFile, _appPrefix)]
+        //[TestCase(FileStorageProvider.Box, _largeFile, _appPrefix)]
+        //[TestCase(FileStorageProvider.Database, _largeFile, _appPrefix)]
+        //[TestCase(FileStorageProvider.FileSystem, _xlargeFile, _appPrefix)]
+        //[TestCase(FileStorageProvider.S3, _xlargeFile, _appPrefix)]
+        //[TestCase(FileStorageProvider.Box, _xlargeFile, _appPrefix)]
+        //[TestCase(FileStorageProvider.Database, _xlargeFile, _appPrefix)]
+        public void LocationPathTestUpload(FileStorageProvider defaultStore, string sourceFile, string appPrefix, string relativePath)
+        {
+            List<string> messages = new List<string>();
+            DateTime start = DateTime.UtcNow;
+
+            IFileStoreIOClient localClient = new FileStoreIOClient(
+                appPrefix: appPrefix,
+                databaseConnection: _dbConnection,
+                maxVersions: _maxVersionsOfFileToKeep,
+                dbSchema: _dbSchema,
+                defaultFileStore: defaultStore,
+                boxConfig: _boxConfig,
+                s3Config: _s3Config,
+                fileSystemConfig: _fsConfig);
+
+            string fileAbsolutePath = Path.GetFullPath(sourceFile);
+            FileInfo fi = new FileInfo(fileAbsolutePath);
+            byte[] contents = File.ReadAllBytes(fi.FullName);
+
+            start = DateTime.UtcNow;
+            string uploadedFileRef = localClient.File_UpsertAsyncV2(relativePath, contents).Result;
+
+            var metadataResult = localClient.File_GetVersionsInfo(uploadedFileRef);
+            var downloadResult = localClient.File_GetAsyncV2(uploadedFileRef).Result;
+
+            Assert.That(
+                downloadResult.Data.LongLength == contents.LongLength
+                && metadataResult.FirstOrDefault().SizeInBytes == contents.LongLength, "Filesize matchinging...");
+
+            double taken = (DateTime.UtcNow - start).TotalSeconds;
+            string outcome = $"Upload Provider: {defaultStore}, Size: {contents.LongLength / 1024}kb, Time: {taken}secs";
+
+
+            SaveToLogs(new ResultModel { Success = true, Messages = new List<string>() { outcome } });
         }
 
         [TestCase(FileStorageProvider.FileSystem, _stdImgFile, _appPrefix)]
