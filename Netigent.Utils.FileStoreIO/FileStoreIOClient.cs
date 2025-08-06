@@ -404,6 +404,84 @@ namespace Netigent.Utils.FileStoreIO
             };
         }
 
+        /// <inheritdoc/>
+        public async Task<ResultModel> File_MoveAsync(string fileRef, string[] pathTags)
+        {
+            var relationalFilePathAndName = $"{string.Join(SystemConstants.InternalDirectorySeparator.ToString(), pathTags)}";
+            return await File_MoveAsync(fileRef, relationalFilePathAndName);
+        }
+
+        /// <inheritdoc/>
+        public async Task<ResultModel> File_MoveAsync(string fileRef, string relationalFilePathAndName)
+        {
+            bool overallStatus = true;
+            List<string> messages = new();
+            PathInfo pathInfo = relationalFilePathAndName.GetPathInfo(addRootFolderPrefix: _appPrefix);
+
+            // Get all versions of the file in ascending order (oldest first)
+            var getFileVersions = File_GetVersionsInfo(fileRef).OrderBy(x => x.Id).ToList();
+            if (getFileVersions?.Count > 0)
+            {
+                foreach (var existingFile in getFileVersions)
+                {
+                    string fileInfo = $"{existingFile.OrginalNameNoExt} (fileRef: {fileRef} / id: {existingFile.Id})";
+
+                    try
+                    {
+                        // Fetch the binary from the existing location and save it to the new location
+                        var fetchFile = await Internal_GetFileAsync(existingFile);
+                        var newFile = new InternalFileModel
+                        {
+                            Created = fetchFile.Created,
+                            MimeType = pathInfo.MimeType,
+                            Extension = pathInfo.FileExtension,
+                            Name = pathInfo.FilenameNoExtension,
+                            Description = fetchFile.Description,
+                            FileLocation = fetchFile.FileLocation,
+                            PathTags = pathInfo.PathTags,
+                            ExtClientRef = relationalFilePathAndName,
+                            FileRef = fileRef,
+                            Data = fetchFile.Data,
+                        };
+                        long sourceFileSize = newFile.Data.LongLength;
+
+                        InternalFileModel updatedFile = await Internal_SaveDataToProviderAsync(
+                            fileModel: newFile,
+                            saveToLocation: FileStorageProviderExts.GetProvider(newFile.FileLocation)
+                        );
+
+                        var verifyFetchFile = new InternalFileModel(await Internal_GetFileAsync(updatedFile));
+
+                        if (verifyFetchFile.Data.LongLength != sourceFileSize)
+                        {
+                            // Throw error fetching file
+                            throw new Exception($"Size was {sourceFileSize} now {verifyFetchFile.Data.LongLength}");
+                        }
+
+                        if (verifyFetchFile.Data.LongLength == sourceFileSize)
+                        {
+                            // Delete the file from the original location
+                            await Internal_DeleteFileAsync(existingFile, removeDbReference: true);
+                        }
+
+                        messages.Add($"Success: file {fileInfo} to {relationalFilePathAndName}");
+                    }
+                    catch (Exception ex)
+                    {
+                        overallStatus = false;
+                        messages.Add($"Failed: {fileInfo}, to {relationalFilePathAndName}, Error: {ex.Message}");
+
+                        if (ex.Message.Contains(offlineWarning))
+                        {
+                            break;
+                        }
+                    }
+                }
+            }
+
+            return new ResultModel { Success = overallStatus, Messages = messages };
+        }
+        
         private long NewlyAddedFiles { get; set; } = 0;
 
         /// <inheritdoc />
@@ -438,6 +516,7 @@ namespace Netigent.Utils.FileStoreIO
                     break;
             }
         }
+        
         #endregion
 
         #region Will Speak to binary providers only
