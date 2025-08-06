@@ -695,6 +695,156 @@ namespace Netigent.Utils.FileStoreIOTests
             Assert.That(fileList?.Count > 0 && fileList.Count == i, "Delete failed");
         }
 
+        
+        [TestCase(FileStorageProvider.FileSystem, _stdImgFile, _appPrefix)]
+        [TestCase(FileStorageProvider.S3, _stdImgFile, _appPrefix)]
+        [TestCase(FileStorageProvider.Box, _stdImgFile, _appPrefix)]
+        [TestCase(FileStorageProvider.FileSystem, _largeFile, _appPrefix)]
+        [TestCase(FileStorageProvider.S3, _largeFile, _appPrefix)]
+        [TestCase(FileStorageProvider.Box, _largeFile, _appPrefix)]
+        [TestCase(FileStorageProvider.FileSystem, _xlargeFile, _appPrefix)]
+        [TestCase(FileStorageProvider.S3, _xlargeFile, _appPrefix)]
+        [TestCase(FileStorageProvider.Box, _xlargeFile, _appPrefix)]
+        public async Task MoveFile_ByPathTags_ShouldRelocateFile(FileStorageProvider defaultStore, string uploadFilePath, string appPrefix)
+        {
+            IFileStoreIOClient localClient = new FileStoreIOClient(
+                appPrefix: _appPrefix,
+                databaseConnection: _dbConnection,
+                maxVersions: _maxVersionsOfFileToKeep,
+                dbSchema: _dbSchema,
+                defaultFileStore: defaultStore,
+                boxConfig: _boxConfig,
+                s3Config: _s3Config,
+                fileSystemConfig: _fsConfig);
+
+            string fileAbsolutePath = Path.GetFullPath(uploadFilePath);
+            FileInfo fi = new FileInfo(fileAbsolutePath);
+            byte[] contents = File.ReadAllBytes(fi.FullName);
+
+            // Upload
+            var originalPathTags = new[] { "Test", "Old" };
+            string fileRef = localClient.File_UpsertAsyncV2(
+                contents,
+                fi.Name,
+                originalPathTags
+            ).Result;
+
+            // Move file
+            var newPathTags = new[] { "Test", "New", fi.Name};
+            var moveResult = localClient.File_MoveAsync(fileRef, newPathTags).Result;
+
+            Assert.IsTrue(moveResult.Success, string.Join(", ", moveResult.Messages));
+
+            // Verify file is in new location
+            var filesInNewLocation = localClient.Files_GetAllV2(newPathTags, true);
+            Assert.IsTrue(filesInNewLocation.Any(f => f.FileRef == fileRef), "File not found in new location.");
+
+            // Verify file is not in old location
+            var filesInOldLocation = localClient.Files_GetAllV2(originalPathTags, true);
+            Assert.IsFalse(filesInOldLocation.Any(f => f.FileRef == fileRef), "File still found in old location.");
+        }
+
+        [Test]
+        public async Task MoveFile_ByPathTagsAndRef_ShouldRelocateFile()
+        {
+            IFileStoreIOClient localClient = new FileStoreIOClient(
+                appPrefix: _appPrefix,
+                databaseConnection: _dbConnection,
+                maxVersions: _maxVersionsOfFileToKeep,
+                dbSchema: _dbSchema,
+                defaultFileStore: FileStorageProvider.FileSystem,
+                boxConfig: _boxConfig,
+                s3Config: _s3Config,
+                fileSystemConfig: _fsConfig);
+
+            // Upload
+            string fileRef = "YOUR_FILE_REF_HERE";
+
+            // Move file
+            var newPathTags = new[] { "Test", "Latest", "latest_tags.jpg" };
+            var moveResult = localClient.File_MoveAsync(fileRef, newPathTags).Result;
+
+            Assert.IsTrue(moveResult.Success, string.Join(", ", moveResult.Messages));
+
+            // Verify file is in new location
+            var filesInNewLocation = localClient.Files_GetAllV2(newPathTags, true);
+            Assert.IsTrue(filesInNewLocation.Any(f => f.FileRef == fileRef), "File not found in new location.");
+        }
+
+        [TestCase(FileStorageProvider.FileSystem, _stdImgFile, _appPrefix)]
+        [TestCase(FileStorageProvider.S3, _stdImgFile, _appPrefix)]
+        [TestCase(FileStorageProvider.Box, _stdImgFile, _appPrefix)]
+        [TestCase(FileStorageProvider.FileSystem, _largeFile, _appPrefix)]
+        [TestCase(FileStorageProvider.S3, _largeFile, _appPrefix)]
+        [TestCase(FileStorageProvider.Box, _largeFile, _appPrefix)]
+        [TestCase(FileStorageProvider.FileSystem, _xlargeFile, _appPrefix)]
+        [TestCase(FileStorageProvider.S3, _xlargeFile, _appPrefix)]
+        [TestCase(FileStorageProvider.Box, _xlargeFile, _appPrefix)]
+        public async Task MoveFile_ByRelationalPath_ShouldRelocateFile(FileStorageProvider defaultStore, string uploadFilePath, string appPrefix)
+        {
+            IFileStoreIOClient localClient = new FileStoreIOClient(
+                appPrefix: _appPrefix,
+                databaseConnection: _dbConnection,
+                maxVersions: _maxVersionsOfFileToKeep,
+                dbSchema: _dbSchema,
+                defaultFileStore: defaultStore,
+                boxConfig: _boxConfig,
+                s3Config: _s3Config,
+                fileSystemConfig: _fsConfig);
+
+            string fileAbsolutePath = Path.GetFullPath(uploadFilePath);
+            FileInfo fi = new FileInfo(fileAbsolutePath);
+            byte[] contents = File.ReadAllBytes(fi.FullName);
+
+            // Upload
+            string originalRelationalPath = "Test/Old/" + fi.Name;
+            string fileRef = localClient.File_UpsertAsyncV2(
+                originalRelationalPath,
+                contents,
+                defaultStore).Result;
+
+            // Move file
+            string newRelationalPath = "Test/New/" + fi.Name;
+            var moveResult = localClient.File_MoveAsync(fileRef, newRelationalPath).Result;
+
+            Assert.IsTrue(moveResult.Success, string.Join(", ", moveResult.Messages));
+
+            // Verify file is in new location
+            var filesInNewLocation = localClient.Files_GetAllV2(newRelationalPath, true);
+            Assert.IsTrue(filesInNewLocation.Any(f => f.FileRef == fileRef), "File not found in new location.");
+
+            // Verify file is not in old location
+            var filesInOldLocation = localClient.Files_GetAllV2(originalRelationalPath, true);
+            Assert.IsFalse(filesInOldLocation.Any(f => f.FileRef == fileRef), "File still found in old location.");
+        }
+
+        [Test]
+        public async Task MoveFile_ByRelationalPathAndRef_ShouldRelocateFile()
+        {
+            IFileStoreIOClient localClient = new FileStoreIOClient(
+                appPrefix: _appPrefix,
+                databaseConnection: _dbConnection,
+                maxVersions: _maxVersionsOfFileToKeep,
+                dbSchema: _dbSchema,
+                defaultFileStore: FileStorageProvider.FileSystem,
+                boxConfig: _boxConfig,
+                s3Config: _s3Config,
+                fileSystemConfig: _fsConfig);
+
+            // Upload
+            string fileRef = "YOUR_FILE_REF_HERE";
+
+            // Move file
+            string newRelationalPath = "Test/Latest/latest.jpg";
+            var moveResult = localClient.File_MoveAsync(fileRef, newRelationalPath).Result;
+
+            Assert.IsTrue(moveResult.Success, string.Join(", ", moveResult.Messages));
+
+            // Verify file is in new location
+            var filesInNewLocation = localClient.Files_GetAllV2(newRelationalPath, true);
+            Assert.IsTrue(filesInNewLocation.Any(f => f.FileRef == fileRef), "File not found in new location.");
+        }
+
 
         private string SaveToLogs(ResultModel results)
         {

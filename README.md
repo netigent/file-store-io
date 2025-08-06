@@ -8,6 +8,12 @@ In terms of using the Library the following should get you up and running quickl
 **Database** The library will autocreate and upgrade filestore table {schema}.[FileStoreIndex]. You can then manually remove column no longer used [FileType], [MainGroup] ,[SubGroup] from [FileStoreIndex] if you want - they're longer used!
 
 # Version Changes
+**1.3.0** Added support for relocating files to new storage locations (folders/paths) within the underlying provider.
+```
+Task<ResultModel> File_MoveAsync(string fileRef, string[] pathTags);
+Task<ResultModel> File_MoveAsync(string fileRef, string relationalFilePathAndName);
+```
+
 **1.2.1** Bug fix Subfile, gets replaced by single Parent. RecursiveSearch = false is now default, if you want a list of all files, including subFolders then set as true.
 ```
 Files_GetAllV2(string[] pathTags, bool recursiveSearch = false);

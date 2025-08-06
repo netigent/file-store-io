@@ -125,5 +125,22 @@ namespace Netigent.Utils.FileStoreIO
         /// <param name="indexLocation">Where to store file, current options Box, FileSystem (UNC / Folder) or Database</param>
         /// <returns></returns>
         Task<ResultModel> File_IndexAsync(FileStorageProvider indexLocation, string indexFrom = "", bool scopeToAppPrefix = true);
+
+        /// <summary>
+        /// Move the File to a New Folder location in the endstorage.
+        /// </summary>
+        /// <param name="fileRef"></param>
+        /// <param name="pathTags">string array of path sections in order e.g. new [] { "HR", "GUIDES", "PUBLISHED", "myguide1.pdf" }</param>
+        /// <returns></returns>
+        Task<ResultModel> File_MoveAsync(string fileRef, string[] pathTags);
+
+        /// <summary>
+        /// Move the File to a New Folder location in the endstorage.
+        /// </summary>
+        /// <param name="fileRef"></param>
+        /// <param name="relationalFilePathAndName">Full path and filename with extension e.g. HR/GUIDES/PUBLISHED/myguide1.pdf</param>
+        /// <returns></returns>
+        Task<ResultModel> File_MoveAsync(string fileRef, string relationalFilePathAndName);
+
     }
 }
