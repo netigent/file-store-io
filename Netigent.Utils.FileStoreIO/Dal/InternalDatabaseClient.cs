@@ -193,6 +193,22 @@ namespace Netigent.Utils.FileStoreIO.Dal
                 return false;
             }
 
+            try
+            {
+                var appendingEndTag = $@"
+                    UPDATE FILESTORE.[FileStoreIndex]
+                        SET [PathTags] = [PathTags] + '/'
+                    WHERE RIGHT([PathTags], 1) <> '/'
+                        ";
+
+                ExecuteQuery(appendingEndTag, null);
+            }
+            catch (Exception ex)
+            {
+                errors = $"Failed Adding v1.3.1 end tag, {ex.Message}";
+                return false;
+            }
+
             return true;
         }
 

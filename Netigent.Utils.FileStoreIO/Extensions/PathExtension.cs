@@ -44,9 +44,9 @@ namespace Netigent.Utils.FileStoreIO.Extensions
 
             var cleanRoot = removeRootFolderPrefix.TrimEnd(new char[] { '\\', '|', '/' });
 
-            string PathTags = cleanRoot?.Length > 0 && relativeFileLocation.StartsWith(cleanRoot)
+            string PathTags = (cleanRoot?.Length > 0 && relativeFileLocation.StartsWith(cleanRoot)
                 ? pathOnly.Replace(cleanRoot, "").DropFirstChar(new char[] { '\\', '|', '/' })
-                : pathOnly;
+                : pathOnly);
 
             string relativePath = cleanRoot?.Length > 0 && relativeFileLocation.StartsWith(cleanRoot)
                 ? relativeFileLocation.Replace(cleanRoot, "").DropFirstChar(new char[] { '\\', '|', '/' })
@@ -54,7 +54,7 @@ namespace Netigent.Utils.FileStoreIO.Extensions
 
             return new PathInfo
             {
-                PathTags = PathTags,
+                PathTags = PathTags + SystemConstants.InternalDirectorySeparator,
                 PathSeperator = SystemConstants.InternalDirectorySeparator,
                 FileExtension = extension,
                 MimeType = MimeHelper.GetMimeType(extension),
