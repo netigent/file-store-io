@@ -1,70 +1,77 @@
 using Dapper;
-using Netigent.Utils.FileStoreIO.Constants;
 using Netigent.Utils.FileStoreIO.Enums;
-using Netigent.Utils.FileStoreIO.Extensions;
 using Netigent.Utils.FileStoreIO.Models;
 using System.Collections.Generic;
 
 namespace Netigent.Utils.FileStoreIO.Dal
 {
-    public partial class InternalDatabaseClient
+    internal partial class IndexDb
     {
         /// <summary>
         /// Get List of fileRecords as List<InternalFileModel> from FileStoreIndex, with a variety of patterns.
         /// </summary>
-        /// <param name="pathToSearch">FilePath e.g. '816', '/816/Signed Approval Template/', '/816/Signed Approval Template/SignoffTemplate.PDF' or '816/Signed Approval Template/SignoffTemplatev2.PDF'</param>
+        /// <param name="pathToSearch">FilePath e.g. './Brochures/222/', 'Brochures/32', './SALES/Training/ColdCalling/'</param>
+        /// <param name="subFolders">Include all subFolders?</param>
+        /// <param name="fileToFind">(Optional) Do you want to filter for a file - e.g. Summary.Pdf?</param>
+        /// <param name="exactFile">(Optional) Do you want exact file match?</param>
         /// <returns></returns>
-        internal List<InternalFileModel> FileStoreIndex_GetAllByLocation(string pathToSearch, bool recursiveSearch)
+        internal List<FileStoreItem> FileStoreIndex_GetAllByFolder(string pathToSearch, bool subFolders, string fileToFind = "", bool exactFile = false)
         {
             // WARNING: Never getdata from here, file could be stored in DB, will kill performancc
             string queryDef = $@"
-                    --DECLARE @PathToSearch varchar(500) = '8026/VendorPaymentSchedule/Charles pay schedule.pdf'
-                    --DECLARE @PathToSearch varchar(500) = '/8026/VendorPaymentSchedule/Charles pay schedule.pdf'
-					--DECLARE @PathToSearch varchar(500) = '4447/SignedInvoice'
-                    --DECLARE @PathToSearch varchar(500) = '/4447/SignedInvoice'
-                    --DECLARE @PathToSearch varchar(500) = '/4554/Invoice/'
-                    --DECLARE @PathToSearch varchar(500) = '/4565'
-                    --DECLARE @PathToSearch varchar(500) = '4550'
-                    --DECLARE @RecursiveMode bit = 1
-                    
-                    DECLARE @pathSep varchar(1) = '{SystemConstants.InternalDirectorySeparator}'
+                --DECLARE @pathToSearch varchar(500) = './Brochures/'
+                --DECLARE @pathToSearch varchar(500) = './Brochures/2/'
+                --DECLARE @pathToSearch varchar(500) = './Brochures/22/'
+                --DECLARE @pathToSearch varchar(500) = './Brochures/222/'
+                --DECLARE @pathToSearch varchar(500) = './SALES/Training/ColdCalling/'
+                --DECLARE @pathToSearch varchar(500) = './NETIGENT/34534534/'
+                --DECLARE @subFolders bit = 1
+                --DECLARE @fileToFind varchar(250) = ''
+                --DECLARE @exactFile bit = 1 
 
-                    SELECT 
-	                    [Id],
-	                    [FileRef],
-	                    [Name],
-	                    [Extension],  
-	                    [MimeType],
-	                    [Description], 
-	                    [Created], 
-	                    [Modified],
-	                    [UploadedBy],
-	                    [FileLocation],
-	                    [PathTags],
-	                    [ExtClientRef],
-                        [SizeInBytes]
-                    FROM [{_schemaName}].[FileStoreIndex]
-                    WHERE
+                SELECT 
+                    [Id],
+                    [FileRef],
+                    [Name],
+                    [Extension],  
+                    [MimeType],
+                    [Description], 
+                    [Created], 
+                    [Modified],
+                    [UploadedBy],
+                    [FileLocation],
+                    [Folder],
+                    [ExtClientRef],
+                    [SizeInBytes],
+                    [Version]
+                FROM [{_schemaName}].[FileStoreIndex]
+                WHERE
+                    -- Folder match
                     (
-                    @RecursiveMode = 1 AND
-                        -- MainGroup is PathType i.e. HR/Training/Sales, would get HR/Training/Sales/John + Mary etc
-                        REPLACE(CONCAT(@pathSep, IsNull([PathTags],''),@pathSep, [Name], Extension),CONCAT(@pathSep,@pathSep),@pathSep)
-                        LIKE
-                        REPLACE(CONCAT(@pathSep, @PathToSearch),CONCAT(@pathSep,@pathSep),@pathSep) + '%'
+                        Folder = @pathToSearch
+                        OR (@subFolders = 1 AND Folder LIKE @pathToSearch + '%')
                     )
-                    OR
+
+                    -- File match
+                    AND
                     (
-                    @RecursiveMode = 0 AND
-                        -- MainGroup is PathType i.e. HR/Training/Sales, would get HR/Training/Sales/John + Mary etc
-                        REPLACE(CONCAT(@pathSep, IsNull([PathTags],''),@pathSep),CONCAT(@pathSep,@pathSep),@pathSep)
-                        =
-                        REPLACE(CONCAT(@pathSep, @PathToSearch,@pathSep),CONCAT(@pathSep,@pathSep),@pathSep)
+                        @fileToFind = '' 
+                        OR (
+                            @exactFile = 1 
+                            AND LOWER(Name + Extension) = LOWER(@fileToFind)
+                        )
+                        OR (
+                            @exactFile = 0
+                            AND LOWER(Name + Extension) LIKE '%' + LOWER(@fileToFind) + '%'
+                        )
                     )";
 
             var queryParms = new DynamicParameters();
-            queryParms.Add("@PathToSearch", pathToSearch.SetPathSeparator(SystemConstants.InternalDirectorySeparator));
-            queryParms.Add("@RecursiveMode", recursiveSearch);
-            return RunQueryToList<InternalFileModel>(queryDef, queryParms);
+            queryParms.Add("@pathToSearch", pathToSearch);
+            queryParms.Add("@subFolders", subFolders);
+            queryParms.Add("@fileToFind", fileToFind);
+            queryParms.Add("@exactFile", exactFile);
+            return RunQueryToList<FileStoreItem>(queryDef, queryParms);
         }
 
         /// <summary>
@@ -73,7 +80,7 @@ namespace Netigent.Utils.FileStoreIO.Dal
         /// <param name="mainGroup">Main-Group-Code / Customer / Record  e.g. customer-1 / record-1</param>
         /// <param name="subGroup">Sub-Group-Code / File-Group / File-Area e.g. profile-pics</param>
         /// <returns></returns>
-        internal List<InternalFileModel> FileStoreIndex_GetAllByRef(string fileRef)
+        internal List<FileStoreItem> FileStoreIndex_GetAllByRef(string fileRef)
         {
             // WARNING: Never getdata from here, file could be stored in DB, will kill performancc
             string queryDef = $@"
@@ -88,49 +95,18 @@ namespace Netigent.Utils.FileStoreIO.Dal
 	                    [Modified],
 	                    [UploadedBy],
 	                    [FileLocation],
-	                    [PathTags],
-	                    [ExtClientRef],
-                        [SizeInBytes]
-					FROM [{_schemaName}].[FileStoreIndex]
-					WHERE [FileRef] = @FileRef
-					ORDER BY Id Desc";
-
-            var queryParms = new DynamicParameters();
-            queryParms.Add("@FileRef", fileRef);
-
-            return RunQueryToList<InternalFileModel>(queryDef, queryParms);
-        }
-
-        /// <summary>
-        /// Get fileRecord from FileStoreIndex by longId.
-        /// </summary>
-        /// <param name="fileRef">FileStore.Id</param>
-        /// <returns>FileStore Object</returns>
-        internal InternalFileModel FileStoreIndex_GetInfo(string fileRef)
-        {
-            string queryDef = $@"
-                    SELECT TOP 1                     
-	                    [Id],
-	                    [FileRef],
-	                    [Name],
-	                    [Extension],  
-	                    [MimeType],
-	                    [Description], 
-	                    [Created], 
-	                    [Modified],
-	                    [UploadedBy],
-	                    [FileLocation],
-	                    [PathTags],
+	                    [Folder],
 	                    [ExtClientRef],
                         [SizeInBytes],
-                        [Data]
-                    FROM [{_schemaName}].[FileStoreIndex]
-                    WHERE [FileRef] = @FileRef";
+                        [Version]
+					FROM [{_schemaName}].[FileStoreIndex]
+					WHERE [FileRef] = @FileRef
+					ORDER BY id Desc";
 
             var queryParms = new DynamicParameters();
             queryParms.Add("@FileRef", fileRef);
 
-            return RunQuery<InternalFileModel>(queryDef, queryParms);
+            return RunQueryToList<FileStoreItem>(queryDef, queryParms);
         }
 
         /// <summary>
@@ -138,7 +114,7 @@ namespace Netigent.Utils.FileStoreIO.Dal
         /// </summary>
         /// <param name="id">FileStore.Id</param>
         /// <returns>FileStore Object</returns>
-        internal InternalFileModel FileStoreIndex_Get(long id)
+        internal FileStoreItem FileStoreIndex_Get(long id)
         {
             string queryDef = $@"
                     SELECT 
@@ -152,17 +128,18 @@ namespace Netigent.Utils.FileStoreIO.Dal
 	                    [Modified],
 	                    [UploadedBy],
 	                    [FileLocation],
-	                    [PathTags],
+	                    [Folder],
 	                    [ExtClientRef],
                         [SizeInBytes],
-                        [Data]
+                        [Data],
+                        [Version]
                     FROM [{_schemaName}].[FileStoreIndex]
                     WHERE [Id] = @Id";
 
             var queryParms = new DynamicParameters();
             queryParms.Add("@Id", id);
 
-            return RunQuery<InternalFileModel>(queryDef, queryParms);
+            return RunQuery<FileStoreItem>(queryDef, queryParms);
         }
 
         /// <summary>
@@ -209,10 +186,10 @@ namespace Netigent.Utils.FileStoreIO.Dal
         /// </summary>
         /// <param name="model">FileStore Object</param>
         /// <returns>Inserted / Updated FileStore.Id</returns>
-        internal long FileStoreIndex_Upsert(InternalFileModel model)
+        internal long FileStoreIndex_Upsert(FileStoreItem model)
         {
             //Existing Record?
-            InternalFileModel existingRecord = model.Id == default ? default : FileStoreIndex_Get(model.Id);
+            FileStoreItem? existingRecord = model.Id == default ? default : FileStoreIndex_Get(model.Id);
 
             // Ensure you aint storing data in db if not specifically asked for
             if (model.FileLocation != (int)FileStorageProvider.Database)
@@ -234,10 +211,11 @@ namespace Netigent.Utils.FileStoreIO.Dal
             queryParms.Add("@Name", model.Name);
             queryParms.Add("@UploadedBy", model.UploadedBy);
             queryParms.Add("@FileLocation", model.FileLocation);
-            queryParms.Add("@PathTags", model.PathTags.SetPathSeparator(SystemConstants.InternalDirectorySeparator));
+            queryParms.Add("@Folder", model.Folder);
             queryParms.Add("@SizeInBytes", model.SizeInBytes);
+            queryParms.Add("@Version", model.Version);
 
-            if (existingRecord != null && existingRecord.Id != default)
+            if (existingRecord != null && existingRecord.Id != default && existingRecord.Id > 0)
             {
                 string queryDef = $@"
                     UPDATE [{_schemaName}].[FileStoreIndex]
@@ -252,8 +230,9 @@ namespace Netigent.Utils.FileStoreIO.Dal
 	                    ,[Name] = @Name
 	                    ,[UploadedBy] = @UploadedBy
 	                    ,[FileLocation] = @FileLocation
-	                    ,[PathTags] = @PathTags
+	                    ,[Folder] = @Folder
 	                    ,[SizeInBytes] = @SizeInBytes
+                        ,[Version] = @Version
 
                     WHERE [Id] = @Id";
 
@@ -276,8 +255,9 @@ namespace Netigent.Utils.FileStoreIO.Dal
 	                    ,[Name]
 	                    ,[UploadedBy]
 	                    ,[FileLocation]
-	                    ,[PathTags]
+	                    ,[Folder]
 	                    ,[SizeInBytes]
+                        ,[Version]
                     )
                     OUTPUT INSERTED.[Id]
                     VALUES
@@ -293,12 +273,37 @@ namespace Netigent.Utils.FileStoreIO.Dal
 	                    ,@Name
 	                    ,@UploadedBy
 	                    ,@FileLocation
-	                    ,@PathTags
+	                    ,@Folder
 	                    ,@SizeInBytes
+                        ,@Version
                     )";
 
                 return RunQuery<long>(queryDef, queryParms);
             }
+        }
+
+        /// <summary>
+        /// Get fileRef from FileStoreIndex by longId.
+        /// </summary>
+        /// <param name="id">FileStore.Id</param>
+        /// <returns>FileStore Object</returns>
+        internal int FileStoreIndex_GetVersionId(string folder, string name, string ext)
+        {
+            string queryDef = $@"
+                    SELECT COALESCE(
+                            (SELECT Max([Version]) + 1 VersionId 
+                            FROM [{_schemaName}].[FileStoreIndex]
+                            WHERE Folder = @Folder AND [Name] = @Name AND [Extension] = @Extension
+                            GROUP BY Folder,[Name],[Extension])
+                        ,1) VersionId";
+
+            var queryParms = new DynamicParameters();
+
+            queryParms.Add("@Folder", folder);
+            queryParms.Add("@Name", name);
+            queryParms.Add("@Extension", ext);
+
+            return RunQuery<int>(queryDef, queryParms);
         }
 
         /// <summary>

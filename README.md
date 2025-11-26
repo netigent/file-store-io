@@ -8,6 +8,35 @@ In terms of using the Library the following should get you up and running quickl
 **Database** The library will autocreate and upgrade filestore table {schema}.[FileStoreIndex]. You can then manually remove column no longer used [FileType], [MainGroup] ,[SubGroup] from [FileStoreIndex] if you want - they're longer used!
 
 # Version Changes
+**1.4.0** 
+The following methods have been marked Obsolete
+
+```
+ List<InternalFileModel> Files_GetAllV2(string[] pathTags, bool recursiveSearch = false)
+ List<InternalFileModel> Files_GetAllV2(string relationalFilePathAndName, bool recursiveSearch = false)
+ ```
+Instead you should move to, these new methods provide clearer functionality to the intent.
+```
+List<FileStoreItem> Files_GetByFolder(string folderPath, bool includeSubFolders = false)
+List<FileStoreItem> Files_GetByFileAndFolder(string folderPath, bool includeSubFolders, string fileToFind, bool exactFileMatch)
+```
+
+Removed Microsoft.AspNetCore.Http.Features - this has also meant removal of the Upsert methods for IFormFile, instead extract and use the byte[] directly e.g.
+```
+IFormFile myFile = [from HttpRequest]
+
+using (var dataStream = new MemoryStream())
+{
+    await file.CopyToAsync(dataStream);
+	string fileRef = fileStoreIOClient.File_UpsertAsyncV2("HT/Training/myprocedures.pdf", dataStream.toArray());
+}
+```
+
+Relabel of data types, to align the system and make more sense from implementation.
+FileObjectModel becomes FileOutput (simple file output, aimed at sending content to a client)
+InternalFileModel becomes FileStoreItem (full record from the FileStoreIndex table)
+Finally internal in the FileStoreIndex table, it now uses Folder, to indicate the Files location.
+
 **1.3.0** Added support for relocating files to new storage locations (folders/paths) within the underlying provider.
 ```
 Task<ResultModel> File_MoveAsync(string fileRef, string[] pathTags);

@@ -42,7 +42,7 @@ namespace Netigent.Utils.FileStoreIO.Clients.Box
 
         private int MaxVersions { get; set; }
 
-        private ObservableCollection<InternalFileModel> _indexList { get; set; }
+        private ObservableCollection<FileStoreItem> _indexList { get; set; }
 
         private const string ApiUrl = "https://api.box.com/2.0";
 
@@ -50,7 +50,7 @@ namespace Netigent.Utils.FileStoreIO.Clients.Box
         private BoxConfig BoxConfig { get; set; }
         private RSA RsaKey { get; set; }
 
-        private char ClientDirectoryChar => '/';
+        private char BoxSeperator => '/';
         #endregion
 
         #region ctor
@@ -97,7 +97,7 @@ namespace Netigent.Utils.FileStoreIO.Clients.Box
                             if (!string.IsNullOrEmpty(RootContentFolder))
                             {
                                 // We're dealing with a string based rootName
-                                long resolvedId = ResolvePathTags(PathTags: RootContentFolder, parentId: 0).Result;
+                                long resolvedId = ResolveFolder(Folder: RootContentFolder, parentId: 0).Result;
                                 if (resolvedId == -1)
                                 {
                                     // Root Folder is string, but not found and autoCreate was false...
@@ -136,12 +136,12 @@ namespace Netigent.Utils.FileStoreIO.Clients.Box
         #endregion
 
         #region Implementation
-        public async Task<long> IndexContentsAsync(ObservableCollection<InternalFileModel> indexList, string indexPathTags, bool scopeToAppFolder)
+        public async Task<long> IndexContentsAsync(ObservableCollection<FileStoreItem> indexList, string indexFolder, bool scopeToAppFolder)
         {
-            long initalFolderId = await CreateOrResolveFolderId(indexPathTags, autoCreate: false);
+            long initalFolderId = await CreateOrResolveFolderId(indexFolder, autoCreate: false);
             if (initalFolderId >= 0)
             {
-                IList<InternalFileModel> output = await IndexFolderAsync(initalFolderId, indexPathTags);
+                IList<FileStoreItem> output = await IndexFolderAsync(initalFolderId, indexFolder);
 
                 if (output.Count > 0)
                 {
@@ -154,9 +154,9 @@ namespace Netigent.Utils.FileStoreIO.Clients.Box
             return 0;
         }
 
-        private async Task<IList<InternalFileModel>> IndexFolderAsync(long folderToIndex, string parentPathTags)
+        private async Task<IList<FileStoreItem>> IndexFolderAsync(long folderToIndex, string parentFolder)
         {
-            List<InternalFileModel> output = new();
+            List<FileStoreItem> output = new();
             var contents = await GetSubItemsListAsync(folderToIndex);
 
             long totalItems = contents.LongCount();
@@ -172,8 +172,8 @@ namespace Netigent.Utils.FileStoreIO.Clients.Box
 
                     if (item.ItemType == BoxItemType.Folder)
                     {
-                        string nextFolder = parentPathTags?.Length > 0
-                            ? $"{parentPathTags}{ClientDirectoryChar}{item.Name}"
+                        string nextFolder = parentFolder?.Length > 0
+                            ? $"{parentFolder}{BoxSeperator}{item.Name}"
                             : item.Name;
 
                         output.AddRange(await IndexFolderAsync(boxFolderRef.BoxId, nextFolder));
@@ -187,7 +187,7 @@ namespace Netigent.Utils.FileStoreIO.Clients.Box
 
                         BoxEntry? getFileInfo = (await GetFileInfo(boxFolderRef.BoxId.ToString())).FirstOrDefault();
 
-                        output.Add(new InternalFileModel
+                        output.Add(new FileStoreItem
                         {
                             Name = nameOnly,
                             Description = getFileInfo?.Description ?? string.Empty,
@@ -196,9 +196,9 @@ namespace Netigent.Utils.FileStoreIO.Clients.Box
                             Modified = getFileInfo?.ModifiedDt,
                             Extension = ext,
                             FileLocation = (int)FileStorageProvider.Box,
-                            PathTags = RootFolderId > 0
-                                ? $"{RootContentFolder}{ClientDirectoryChar}{parentPathTags}" // Valid AppFolder was found prepend it
-                                : parentPathTags, // No App Prefix found...
+                            Folder = RootFolderId > 0
+                                ? $"{RootContentFolder}{BoxSeperator}{parentFolder}" // Valid AppFolder was found prepend it
+                                : parentFolder, // No App Prefix found...
                             MimeType = mimeType,
                             SizeInBytes = getFileInfo?.Size ?? -1,
                         });
@@ -217,7 +217,7 @@ namespace Netigent.Utils.FileStoreIO.Clients.Box
             return response;
         }
 
-        public async Task<string> SaveFileAsync(InternalFileModel fileModel)
+        public async Task<string> SaveFileAsync(FileStoreItem fileModel)
         {
             if (fileModel.Data?.Length == null)
             {
@@ -225,10 +225,11 @@ namespace Netigent.Utils.FileStoreIO.Clients.Box
                 return string.Empty;
             }
 
-            PathInfo fileInfo = fileModel.GetPathInfo();
-            long folderId = await ResolvePathTags(fileInfo.PathTags, RootFolderId);
+            // FileData fileInfo = fileModel.GetFileData();
+
+            long folderId = await ResolveFolder(fileModel.FullPath.ToRelativeFolder(useRelativeRoot: string.Empty, useSeperator: BoxSeperator), RootFolderId);
             string endpoint = $"{UploadUrl}/content";
-            string boxAttribute = BoxAttribute(fileInfo.Filename, folderId);
+            string boxAttribute = BoxAttribute(fileModel.FullName, folderId);
 
             // Check for conflicts i.e. file already exists
             BoxApiResult uploadResult = await UploadPreflightAsync(boxAttribute);
@@ -246,7 +247,7 @@ namespace Netigent.Utils.FileStoreIO.Clients.Box
 
             if (!uploadResult.IsSuccess && uploadResult.StatusCode == (int)HttpStatusCode.NotFound)
             {
-                throw new Exception($"Folder Path Doesnt Exist '{fileInfo.PathTags}' and autoCreate='{BoxConfig.AutoCreateRoot.ToString()}");
+                throw new Exception($"Folder Path Doesnt Exist '{fileModel.FullPath.ToRelativeFolder(useRelativeRoot: string.Empty, useSeperator: BoxSeperator)}' and autoCreate='{BoxConfig.AutoCreateRoot.ToString()}");
             }
             if (!uploadResult.IsSuccess && MaxVersions > 1)
             {
@@ -264,7 +265,7 @@ namespace Netigent.Utils.FileStoreIO.Clients.Box
             }
         }
 
-        public async Task<InternalFileModel> GetFileAsync(string filePath)
+        public async Task<byte[]> GetFileAsync(string filePath)
         {
             var boxRef = new BoxRef(filePath);
 
@@ -273,9 +274,9 @@ namespace Netigent.Utils.FileStoreIO.Clients.Box
             // handle 202 / 302 and retry-after
 
             string url = $"https://api.box.com/2.0/files/{boxRef.BoxId}/content{(boxRef.FileVersionId >= 0 ? $"?version={boxRef.FileVersionId}" : string.Empty)}";
-            var result = await GetAsync<InternalFileModel>(url);
+            var result = await GetAsync<FileStoreItem>(url);
 
-            return result;
+            return result.Data;
         }
 
         public async Task<bool> DeleteFileAsync(string filePath)
@@ -385,15 +386,15 @@ namespace Netigent.Utils.FileStoreIO.Clients.Box
             throw new Exception(result.Message);
         }
 
-        private async Task<long> ResolvePathTags(string PathTags, long parentId = -1)
+        private async Task<long> ResolveFolder(string Folder, long parentId = -1)
         {
             long parentBoxId = parentId >= 0 ? parentId : RootFolderId;
-            string[] folders = PathTags.Split(new string[] { ClientDirectoryChar.ToString() }, options: StringSplitOptions.RemoveEmptyEntries);
+            string[] folders = Folder.Split(new string[] { BoxSeperator.ToString() }, options: StringSplitOptions.RemoveEmptyEntries);
 
             return folders.Length > 1
                 // Work way through folder tree to ensure you get all subFolder Ids
-                ? await ResolvePathTags(
-                    PathTags: string.Join(ClientDirectoryChar.ToString(), folders.Skip(1)),
+                ? await ResolveFolder(
+                    Folder: string.Join(BoxSeperator.ToString(), folders.Skip(1)),
                     parentId: await CreateOrResolveFolderId(folders[0], parentBoxId))
 
                 // At last subFolder
@@ -440,10 +441,10 @@ namespace Netigent.Utils.FileStoreIO.Clients.Box
             return targetBoxId;
         }
 
-        private async Task<string> UploadNewVersionAsync(InternalFileModel fileModel, string existingFileId, long folderId)
+        private async Task<string> UploadNewVersionAsync(FileStoreItem fileModel, string existingFileId, long folderId)
         {
             string endpoint = $"{UploadUrl}/{existingFileId}/content";
-            string boxAttribute = BoxAttribute(fileModel.OrginalNameWithExt, folderId);
+            string boxAttribute = BoxAttribute(fileModel.NameNoVersionWithExt, folderId);
 
             var result = await PostContentAsync(endpoint, boxAttribute, fileModel);
 
@@ -565,12 +566,12 @@ namespace Netigent.Utils.FileStoreIO.Clients.Box
 
                 if (httpResponse?.IsSuccessStatusCode == true)
                 {
-                    if (typeof(T) == typeof(InternalFileModel) && httpResponse.Content.Headers?.ContentDisposition?.DispositionType == "attachment")
+                    if (typeof(T) == typeof(FileStoreItem) && httpResponse.Content.Headers?.ContentDisposition?.DispositionType == "attachment")
                     {
                         FileInfo fileInfo = new FileInfo(httpResponse.Content.Headers.ContentDisposition.FileName);
 
                         byte[] data = await httpResponse.Content.ReadAsByteArrayAsync();
-                        return (T)Convert.ChangeType(new InternalFileModel
+                        return (T)Convert.ChangeType(new FileStoreItem
                         {
                             Data = data,
                             Name = fileInfo.Name,
@@ -607,7 +608,7 @@ namespace Netigent.Utils.FileStoreIO.Clients.Box
             };
         }
 
-        private async Task<BoxApiResult> PostContentAsync(string url, string boxAttribute, InternalFileModel fileModel)
+        private async Task<BoxApiResult> PostContentAsync(string url, string boxAttribute, FileStoreItem fileModel)
         {
             if (await PreflightChecks())
             {
@@ -631,7 +632,7 @@ namespace Netigent.Utils.FileStoreIO.Clients.Box
                             fileContent.Headers.ContentDisposition = new ContentDispositionHeaderValue("form-data")
                             {
                                 Name = fileModel.OrginalNameNoExt,
-                                FileName = fileModel.OrginalNameWithExt
+                                FileName = fileModel.NameNoVersionWithExt
                             };
                             fileContent.Headers.ContentType = new MediaTypeHeaderValue("multipart/form-data");
 

@@ -25,12 +25,12 @@ namespace Netigent.Utils.FileStoreIO.Clients
         /// </summary>
         /// <param name="fileModel"></param>
         /// <returns></returns>
-        public Task<string> SaveFileAsync(InternalFileModel fileModel);
+        public Task<string> SaveFileAsync(FileStoreItem fileModel);
 
-        public Task<InternalFileModel> GetFileAsync(string extClientRef);
+        public Task<byte[]> GetFileAsync(string extClientRef);
 
         public Task<bool> DeleteFileAsync(string extClientRef);
 
-        public Task<long> IndexContentsAsync(ObservableCollection<InternalFileModel> indexList, string indexPathTags, bool scopeToAppFolder);
+        public Task<long> IndexContentsAsync(ObservableCollection<FileStoreItem> indexList, string indexFolder, bool scopeToAppFolder);
     }
 }

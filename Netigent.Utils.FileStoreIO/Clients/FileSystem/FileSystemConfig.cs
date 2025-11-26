@@ -1,5 +1,4 @@
-﻿using Netigent.Utils.FileStoreIO.Clients.S3;
-using Netigent.Utils.FileStoreIO.Enums;
+﻿using Netigent.Utils.FileStoreIO.Enums;
 
 namespace Netigent.Utils.FileStoreIO.Clients.FileSystem
 {
@@ -10,6 +9,8 @@ namespace Netigent.Utils.FileStoreIO.Clients.FileSystem
         public string RootFolder { get; set; } = string.Empty;
 
         public bool StoreFileAsUniqueRef { get; set; } = false;
+
+        public bool AllowNonRootStoage { get; set; } = false;
 
         public FileSystemConfig() { }
 

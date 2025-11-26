@@ -4,8 +4,10 @@ using Netigent.Utils.FileStoreIO.Clients.Box.Models;
 using Netigent.Utils.FileStoreIO.Clients.FileSystem;
 using Netigent.Utils.FileStoreIO.Clients.S3;
 using Netigent.Utils.FileStoreIO.Enums;
+using Netigent.Utils.FileStoreIO.Extensions;
 using Netigent.Utils.FileStoreIO.Models;
 using Newtonsoft.Json;
+using System.Data.SqlClient;
 
 namespace Netigent.Utils.FileStoreIOTests
 {
@@ -13,7 +15,10 @@ namespace Netigent.Utils.FileStoreIOTests
     public class TestSet
     {
         #region Members
-        private IFileStoreIOClient _client { get; set; }
+        private IFileStoreIOClient _clientNoPreFix { get; set; }
+        private IFileStoreIOClient _clientWithPrefix { get; set; }
+
+
 
         private const string _xlargeFile = ".\\TestFiles\\TestGifFile_88MB.gif";
         private const string _largeFile = ".\\TestFiles\\whiteVid_37MB.mp4";
@@ -32,22 +37,26 @@ namespace Netigent.Utils.FileStoreIOTests
             @".\TestFiles\photo_A_3MB.jpg"
         ];
 
-        private const string _dbConnection = "Server=.;Database=myDatabase;UID=mySa;PWD=myPassword;TrustServerCertificate=True;";
+        private const string _dbConnection = "Server=.;Database=TestDb2;UID=mySa;PWD=myPassword;TrustServerCertificate=True;";
         private const string _dbSchema = "fileStore";
         private S3Config _s3Config;
         private BoxConfig _boxConfig;
         private FileSystemConfig _fsConfig;
-        private int _maxVersionsOfFileToKeep = 10;
-        private const string _appPrefix = "";
+        private int _maxVersionsOfFileToKeep = 3;
+        private const string _appPrefix = "NETIGENT";
 
         private const string outputLog = "testingLog.txt";
+
+        private List<string> _uploadedFileRefs;
         #endregion
 
         #region ctor
         [SetUp]
         public void Setup()
         {
-            // FPDC S3
+            _uploadedFileRefs = new List<string>();
+
+            // Netigent S3
             _s3Config = new S3Config()
             {
                 AccessKey = "ExampleAccessKey",
@@ -56,7 +65,7 @@ namespace Netigent.Utils.FileStoreIOTests
                 BucketName = "my-example-bucket-name"
             };
 
-            // IBKS Dev Box
+            // Netigent Box
             _boxConfig = new BoxConfig()
             {
                 EnterpriseID = "123456789",
@@ -80,8 +89,18 @@ namespace Netigent.Utils.FileStoreIOTests
                 StoreFileAsUniqueRef = false,
             };
 
-            _client = new FileStoreIOClient(
+            _clientWithPrefix = new FileStoreIOClient(
                 appPrefix: _appPrefix,
+                databaseConnection: _dbConnection,
+                maxVersions: _maxVersionsOfFileToKeep,
+                dbSchema: _dbSchema,
+                defaultFileStore: FileStorageProvider.FileSystem,
+                boxConfig: _boxConfig,
+                s3Config: _s3Config,
+                fileSystemConfig: _fsConfig);
+
+            _clientNoPreFix = new FileStoreIOClient(
+                appPrefix: string.Empty,
                 databaseConnection: _dbConnection,
                 maxVersions: _maxVersionsOfFileToKeep,
                 dbSchema: _dbSchema,
@@ -91,11 +110,296 @@ namespace Netigent.Utils.FileStoreIOTests
                 fileSystemConfig: _fsConfig);
         }
 
-        public void TearDown()
+        [TearDown]
+        public async Task TearDown()
         {
-            _client = null;
+            // Clean up uploaded files from database and storage
+            if (_uploadedFileRefs?.Any() == true)
+            {
+                foreach (var fileRef in _uploadedFileRefs)
+                {
+                    try
+                    {
+                        await _clientWithPrefix.File_DeleteAsync(fileRef);
+                        TestContext.WriteLine($"Cleaned up: {fileRef}");
+                    }
+                    catch (Exception ex)
+                    {
+                        TestContext.WriteLine($"Failed to cleanup {fileRef}: {ex.Message}");
+                    }
+                }
+            }
+
+            // _client?.Dispose(); Doesnt implement IDisposible
+            _clientWithPrefix = null;
+            _clientNoPreFix = null;
+        }
+
+        [OneTimeTearDown]
+        public void OneTimeTearDown()
+        {
+            // Clean up test storage directory if empty
+            try
+            {
+                if (Directory.Exists(_fsLocation) && !Directory.EnumerateFileSystemEntries(_fsLocation).Any())
+                {
+                    Directory.Delete(_fsLocation);
+                }
+            }
+            catch { }
+
+            // Clear SQL connection pool
+            SqlConnection.ClearAllPools();
         }
         #endregion
+
+        [TestCase(FileStorageProvider.S3, _txtFile1, "myFile1.txt", "NETIGENT\\myFile1.txt", "./NETIGENT/")]
+        [TestCase(FileStorageProvider.FileSystem, _txtFile1, "myFile1.txt", "NETIGENT\\myFile1.txt", "./NETIGENT/")]
+        [TestCase(FileStorageProvider.Database, _txtFile1, "myFile1.txt", null, "./NETIGENT/")]
+        [TestCase(FileStorageProvider.S3, _txtFile1, "1\\myFile1.txt", "NETIGENT\\1\\myFile1.txt", "./NETIGENT/1/")]
+        [TestCase(FileStorageProvider.FileSystem, _txtFile1, "1\\myFile1.txt", "NETIGENT\\1\\myFile1.txt", "./NETIGENT/1/")]
+        [TestCase(FileStorageProvider.Database, _txtFile1, "1\\myFile1.txt", null, "./NETIGENT/1/")]
+        public async Task Upsert_FileSystem_Prefix(
+             FileStorageProvider defaultStore,
+             string sourceFile,
+             string storagePath,
+             string? expectedExtRef,
+             string expectedFolder)
+        {
+
+            var client = _clientWithPrefix;
+
+            // Fetch
+            FileInfo fi = new FileInfo(Path.GetFullPath(sourceFile));
+            byte[] contents = await File.ReadAllBytesAsync(fi.FullName);
+
+            // Upload it
+            string uploadedFileRef = await client.File_UpsertAsyncV2(storagePath, contents, fileStorageProvider: defaultStore, uploadedBy: "UnitTest");
+            TestContext.WriteLine($"Uploaded: {uploadedFileRef}");
+
+            // Assert - Database metadata record exists
+            FileStoreItem? fsResult = client.File_GetVersionsInfo(uploadedFileRef).FirstOrDefault();
+            Assert.That(fsResult, Is.Not.Null,
+                $"Database metadata not found for FileRef: {uploadedFileRef}");
+
+            // Assert - Storage matches
+            Assert.That((int)fsResult.FileLocation, Is.EqualTo((int)defaultStore),
+                $"FileStore Provider mismatch.\n" +
+                $"  Expected: '{(int)defaultStore}'\n" +
+                $"  Actual:   '{(int)fsResult.FileLocation}'\n" +
+                $"  FileRef:  '{uploadedFileRef}'");
+
+            // Assert - ExtClientRef matches expected (path normalization)
+            string extRef = fsResult.ExtClientRefNoVersion == null ? null : fsResult.ExtClientRefNoVersion.ReplaceSeperators();
+            string targetRef = expectedExtRef == null ? null : expectedExtRef.ReplaceSeperators();
+            Assert.That(extRef, Is.EqualTo(targetRef),
+                $"ExtClientRef mismatch.\n" +
+                $"  Expected: '{targetRef}'\n" +
+                $"  Actual:   '{extRef}'\n" +
+                $"  FileRef:  '{uploadedFileRef}'");
+
+            // Assert - Folder structure matches expected
+            Assert.That(fsResult.Folder, Is.EqualTo(expectedFolder),
+                $"Folder mismatch.\n" +
+                $"  Expected: '{expectedFolder}'\n" +
+                $"  Actual:   '{fsResult.Folder}'\n" +
+                $"  FileRef:  '{uploadedFileRef}'");
+
+            // Assert - File size recorded in database
+            Assert.That(fsResult.SizeInBytes, Is.EqualTo(contents.LongLength),
+                $"Database size mismatch.\n" +
+                $"  Expected: {contents.LongLength} bytes\n" +
+                $"  Actual:   {fsResult.SizeInBytes} bytes\n" +
+                $"  FileRef:  '{uploadedFileRef}'");
+
+            // Act - Download file
+            var downloadResult = await client.File_GetAsyncV2(uploadedFileRef);
+
+            // Assert - Downloaded file size matches original
+            Assert.That(downloadResult.Data.LongLength, Is.EqualTo(contents.LongLength),
+                $"Downloaded file size mismatch.\n" +
+                $"  Expected: {contents.LongLength} bytes\n" +
+                $"  Actual:   {downloadResult.Data.LongLength} bytes\n" +
+                $"  FileRef:  '{uploadedFileRef}'");
+
+
+            var folderResults = client.Files_GetByFolder(fsResult.Folder);
+            Assert.That(folderResults.Count > 0 && folderResults.Any(x => x.FileRef == uploadedFileRef),
+                $"Missing from folder Search.\n" +
+                $"  Expected: {contents.LongLength} bytes\n" +
+                $"  Actual:   {downloadResult.Data.LongLength} bytes\n" +
+                $"  FileRef:  '{uploadedFileRef}'");
+        }
+
+
+        [TestCase(FileStorageProvider.S3, _txtFile1, "myFile1.txt", "myFile1.txt", "./")]
+        [TestCase(FileStorageProvider.FileSystem, _txtFile1, "myFile1.txt", "myFile1.txt", "./")]
+        [TestCase(FileStorageProvider.Database, _txtFile1, "myFile1.txt", null, "./")]
+        [TestCase(FileStorageProvider.S3, _txtFile1, "1\\myFile1.txt", "1\\myFile1.txt", "./1/")]
+        [TestCase(FileStorageProvider.FileSystem, _txtFile1, "1\\myFile1.txt", "1\\myFile1.txt", "./1/")]
+        [TestCase(FileStorageProvider.Database, _txtFile1, "1\\myFile1.txt", null, "./1/")]
+        public async Task Upsert_FileSystem_NoPrefix(
+            FileStorageProvider defaultStore,
+            string sourceFile,
+            string storagePath,
+            string? expectedExtRef,
+            string expectedFolder)
+        {
+
+            var client = _clientNoPreFix;
+
+            // Fetch
+            FileInfo fi = new FileInfo(Path.GetFullPath(sourceFile));
+            byte[] contents = await File.ReadAllBytesAsync(fi.FullName);
+
+            // Upload it
+            string uploadedFileRef = await client.File_UpsertAsyncV2(storagePath, contents, fileStorageProvider: defaultStore, uploadedBy: "UnitTest");
+            TestContext.WriteLine($"Uploaded: {uploadedFileRef}");
+
+            // Assert - Database metadata record exists
+            FileStoreItem? fsResult = client.File_GetVersionsInfo(uploadedFileRef).FirstOrDefault();
+            Assert.That(fsResult, Is.Not.Null,
+                $"Database metadata not found for FileRef: {uploadedFileRef}");
+
+            // Assert - Storage matches
+            Assert.That((int)fsResult.FileLocation, Is.EqualTo((int)defaultStore),
+                $"FileStore Provider mismatch.\n" +
+                $"  Expected: '{(int)defaultStore}'\n" +
+                $"  Actual:   '{(int)fsResult.FileLocation}'\n" +
+                $"  FileRef:  '{uploadedFileRef}'");
+
+            // Assert - ExtClientRef matches expected (path normalization)
+            string extRef = fsResult.ExtClientRefNoVersion == null ? null : fsResult.ExtClientRefNoVersion.ReplaceSeperators();
+            string targetRef = expectedExtRef == null ? null : expectedExtRef.ReplaceSeperators();
+            Assert.That(extRef, Is.EqualTo(targetRef),
+                $"ExtClientRef mismatch.\n" +
+                $"  Expected: '{targetRef}'\n" +
+                $"  Actual:   '{extRef}'\n" +
+                $"  FileRef:  '{uploadedFileRef}'");
+
+            // Assert - Folder structure matches expected
+            Assert.That(fsResult.Folder, Is.EqualTo(expectedFolder),
+                $"Folder mismatch.\n" +
+                $"  Expected: '{expectedFolder}'\n" +
+                $"  Actual:   '{fsResult.Folder}'\n" +
+                $"  FileRef:  '{uploadedFileRef}'");
+
+            // Assert - File size recorded in database
+            Assert.That(fsResult.SizeInBytes, Is.EqualTo(contents.LongLength),
+                $"Database size mismatch.\n" +
+                $"  Expected: {contents.LongLength} bytes\n" +
+                $"  Actual:   {fsResult.SizeInBytes} bytes\n" +
+                $"  FileRef:  '{uploadedFileRef}'");
+
+            // Act - Download file
+            var downloadResult = await client.File_GetAsyncV2(uploadedFileRef);
+
+            // Assert - Downloaded file size matches original
+            Assert.That(downloadResult.Data.LongLength, Is.EqualTo(contents.LongLength),
+                $"Downloaded file size mismatch.\n" +
+                $"  Expected: {contents.LongLength} bytes\n" +
+                $"  Actual:   {downloadResult.Data.LongLength} bytes\n" +
+                $"  FileRef:  '{uploadedFileRef}'");
+
+
+            var folderResults = client.Files_GetByFolder(fsResult.Folder);
+            Assert.That(folderResults.Count > 0 && folderResults.Any(x => x.FileRef == uploadedFileRef),
+                $"Missing from folder Search.\n" +
+                $"  Expected: {contents.LongLength} bytes\n" +
+                $"  Actual:   {downloadResult.Data.LongLength} bytes\n" +
+                $"  FileRef:  '{uploadedFileRef}'");
+        }
+
+        [TestCase(FileStorageProvider.S3, _txtFile1, "myFileA.txt", 25, "myFileA.txt", "./")]
+        [TestCase(FileStorageProvider.FileSystem, _txtFile1, "myFileB.txt", 25, "myFileB.txt", "./")]
+        [TestCase(FileStorageProvider.Database, _txtFile1, "myFileB.txt", 25, null, "./")]
+        public async Task Upsert_FileSystem_HistoryOverride(
+            FileStorageProvider defaultStore,
+            string sourceFile,
+            string storagePath,
+            int copiesCount,
+            string? expectedExtRef,
+            string expectedFolder)
+        {
+
+            var client = _clientNoPreFix;
+
+            // Fetch
+            FileInfo fi = new FileInfo(Path.GetFullPath(sourceFile));
+            byte[] contents = await File.ReadAllBytesAsync(fi.FullName);
+
+            // Upload it
+            string uploadedFileRef = await client.File_UpsertAsyncV2(storagePath, contents, fileStorageProvider: defaultStore, uploadedBy: "UnitTest", priorCopies: copiesCount);
+
+            for (int i = 1; i < (copiesCount * 2); i++)
+            {
+                string newRef = await client.File_UpsertAsyncV2(storagePath, contents, fileStorageProvider: defaultStore, uploadedBy: "UnitTest", priorCopies: copiesCount);
+
+                // Assert - Storage matches
+                Assert.That(newRef, Is.EqualTo(uploadedFileRef),
+                    $"FileRef Mismatch - Version issue?.\n" +
+                    $"  Expected: '{uploadedFileRef}'\n" +
+                    $"  Actual:   '{newRef}'");
+            }
+
+            TestContext.WriteLine($"Uploaded: {uploadedFileRef}");
+
+            // Assert - Database metadata record exists
+            var fsResults = client.File_GetVersionsInfo(uploadedFileRef);
+
+            Assert.That(fsResults.Count, Is.EqualTo(copiesCount),
+                $"Count Mismatch: {uploadedFileRef}");
+
+            var fsResult = fsResults.FirstOrDefault();
+
+            // Assert - Storage matches
+            Assert.That((int)fsResult.FileLocation, Is.EqualTo((int)defaultStore),
+                $"FileStore Provider mismatch.\n" +
+                $"  Expected: '{(int)defaultStore}'\n" +
+                $"  Actual:   '{(int)fsResult.FileLocation}'\n" +
+                $"  FileRef:  '{uploadedFileRef}'");
+
+            // Assert - ExtClientRef matches expected (path normalization)
+            string extRef = fsResult.ExtClientRefNoVersion == null ? null : fsResult.ExtClientRefNoVersion.ReplaceSeperators();
+            string targetRef = expectedExtRef == null ? null : expectedExtRef.ReplaceSeperators();
+            Assert.That(extRef, Is.EqualTo(targetRef),
+                $"ExtClientRef mismatch.\n" +
+                $"  Expected: '{targetRef}'\n" +
+                $"  Actual:   '{extRef}'\n" +
+                $"  FileRef:  '{uploadedFileRef}'");
+
+            // Assert - Folder structure matches expected
+            Assert.That(fsResult.Folder, Is.EqualTo(expectedFolder),
+                $"Folder mismatch.\n" +
+                $"  Expected: '{expectedFolder}'\n" +
+                $"  Actual:   '{fsResult.Folder}'\n" +
+                $"  FileRef:  '{uploadedFileRef}'");
+
+            // Assert - File size recorded in database
+            Assert.That(fsResult.SizeInBytes, Is.EqualTo(contents.LongLength),
+                $"Database size mismatch.\n" +
+                $"  Expected: {contents.LongLength} bytes\n" +
+                $"  Actual:   {fsResult.SizeInBytes} bytes\n" +
+                $"  FileRef:  '{uploadedFileRef}'");
+
+            // Act - Download file
+            var downloadResult = await client.File_GetAsyncV2(uploadedFileRef);
+
+            // Assert - Downloaded file size matches original
+            Assert.That(downloadResult.Data.LongLength, Is.EqualTo(contents.LongLength),
+                $"Downloaded file size mismatch.\n" +
+                $"  Expected: {contents.LongLength} bytes\n" +
+                $"  Actual:   {downloadResult.Data.LongLength} bytes\n" +
+                $"  FileRef:  '{uploadedFileRef}'");
+
+
+            var folderResults = client.Files_GetByFolder(fsResult.Folder);
+            Assert.That(folderResults.Count > 0 && folderResults.Any(x => x.FileRef == uploadedFileRef),
+                $"Missing from folder Search.\n" +
+                $"  Expected: {contents.LongLength} bytes\n" +
+                $"  Actual:   {downloadResult.Data.LongLength} bytes\n" +
+                $"  FileRef:  '{uploadedFileRef}'");
+        }
 
 
         [Test]
@@ -171,7 +475,7 @@ namespace Netigent.Utils.FileStoreIOTests
 				""AppPrefix"": ""MyAppToScopeTo"",               
 				""FilePrefix"": ""_$"",
 				""DatabaseSchema"": ""filestore"",
-				""MaxVersions"": 5,
+				""MaxVersions"": 1,
 				""DefaultStorage"": ""S3"",
 				""S3"": {
 					""AccessKey"": ""ExampleAccessKey"",
@@ -236,6 +540,21 @@ namespace Netigent.Utils.FileStoreIOTests
         }
 
 
+        //[TestCase(FileStorageProvider.FileSystem, _stdImgFile, _appPrefix)]
+        //[TestCase(FileStorageProvider.S3, _stdImgFile, _appPrefix)]
+        // [TestCase(FileStorageProvider.Box, _stdImgFile, _appPrefix)]
+
+
+        //[TestCase(FileStorageProvider.FileSystem, _txtFile2, _appPrefix, "myfile.txt")]
+        //[TestCase(FileStorageProvider.FileSystem, _txtFile3, _appPrefix, "|1\\myFile3.txt")]
+        //[TestCase(FileStorageProvider.FileSystem, _stdImgFile, _appPrefix, "/2/main-photo3.jpg")]
+        //[TestCase(FileStorageProvider.FileSystem, _stdImgFile, _appPrefix, "2/main-photod.jpg")]
+        ////[TestCase(FileStorageProvider.FileSystem, _stdImgFile, _appPrefix, "xxxx\\20/main-photdo.jpg")]
+        ////[TestCase(FileStorageProvider.Database, _largeFile, _appPrefix, "main-xxxx.jpg")]
+        ////[TestCase(FileStorageProvider.FileSystem, _largeFile, _appPrefix, "main-xxxx11.jpg")]
+
+
+
         [TestCase(FileStorageProvider.FileSystem, _stdImgFile, _appPrefix)]
         [TestCase(FileStorageProvider.S3, _stdImgFile, _appPrefix)]
         [TestCase(FileStorageProvider.Box, _stdImgFile, _appPrefix)]
@@ -285,16 +604,14 @@ namespace Netigent.Utils.FileStoreIOTests
         //[TestCase(FileStorageProvider.S3, _stdImgFile, _appPrefix)]
         // [TestCase(FileStorageProvider.Box, _stdImgFile, _appPrefix)]
 
-        [TestCase(FileStorageProvider.FileSystem, _txtFile1, _appPrefix, "/tuesday/photo/folder1/myFile.txt")]
-        [TestCase(FileStorageProvider.FileSystem, _txtFile2, _appPrefix, "/tuesday/photo/myFile.txt")]
-        [TestCase(FileStorageProvider.FileSystem, _txtFile3, _appPrefix, "/tuesday/myFile.txt")]
-        //[TestCase(FileStorageProvider.S3, _largeFile, _appPrefix)]
-        //[TestCase(FileStorageProvider.Box, _largeFile, _appPrefix)]
-        //[TestCase(FileStorageProvider.Database, _largeFile, _appPrefix)]
-        //[TestCase(FileStorageProvider.FileSystem, _xlargeFile, _appPrefix)]
-        //[TestCase(FileStorageProvider.S3, _xlargeFile, _appPrefix)]
-        //[TestCase(FileStorageProvider.Box, _xlargeFile, _appPrefix)]
-        //[TestCase(FileStorageProvider.Database, _xlargeFile, _appPrefix)]
+        [TestCase(FileStorageProvider.FileSystem, _txtFile1, _appPrefix, "\\1\\myFile1.txt")]
+        [TestCase(FileStorageProvider.FileSystem, _txtFile2, _appPrefix, "myfile.txt")]
+        [TestCase(FileStorageProvider.FileSystem, _txtFile3, _appPrefix, "|1\\myFile3.txt")]
+        [TestCase(FileStorageProvider.FileSystem, _stdImgFile, _appPrefix, "/2/main-photo3.jpg")]
+        [TestCase(FileStorageProvider.FileSystem, _stdImgFile, _appPrefix, "2/main-photod.jpg")]
+        //[TestCase(FileStorageProvider.FileSystem, _stdImgFile, _appPrefix, "xxxx\\20/main-photdo.jpg")]
+        //[TestCase(FileStorageProvider.Database, _largeFile, _appPrefix, "main-xxxx.jpg")]
+        //[TestCase(FileStorageProvider.FileSystem, _largeFile, _appPrefix, "main-xxxx11.jpg")]
         public void LocationPathTestUpload(FileStorageProvider defaultStore, string sourceFile, string appPrefix, string relativePath)
         {
             List<string> messages = new List<string>();
@@ -420,7 +737,7 @@ namespace Netigent.Utils.FileStoreIOTests
                 double taken = (DateTime.UtcNow - start).TotalSeconds;
                 var downloadedFile = localClient.File_GetAsyncV2(mostRecentFileRecordFromStore.FileRef).Result;
                 string outcome = $"Download Provider: {defaultStore}, Size: {downloadedFile.Data.LongLength / 1024}kb, Time: {taken}secs";
-                Assert.That(downloadedFile.Name == mostRecentFileRecordFromStore.OrginalNameWithExt && downloadedFile.Data.LongLength == mostRecentFileRecordFromStore.SizeInBytes);
+                Assert.That(downloadedFile.FullName == mostRecentFileRecordFromStore.NameNoVersionWithExt && downloadedFile.Data.LongLength == mostRecentFileRecordFromStore.SizeInBytes);
             }
             else
             {
@@ -449,7 +766,7 @@ namespace Netigent.Utils.FileStoreIOTests
                 fileSystemConfig: _fsConfig);
 
             // Upload the File
-            var indexLocationResult = localClient.File_IndexAsync(defaultStore, indexFrom: indexLocation, scopeToAppPrefix: appPrefix?.Length > 0).Result;
+            var indexLocationResult = localClient.File_IndexAsync(defaultStore, startPath: indexLocation, scopeToAppPrefix: appPrefix?.Length > 0).Result;
 
             SaveToLogs(indexLocationResult);
             Assert.That(indexLocationResult.Success = true);
@@ -549,12 +866,12 @@ namespace Netigent.Utils.FileStoreIOTests
             FileInfo fi = new FileInfo(fileAbsolutePath);
             byte[] contents = File.ReadAllBytes(fi.FullName);
 
-            string fileRef = _client.File_UpsertAsyncV2(
+            string fileRef = _clientWithPrefix.File_UpsertAsyncV2(
                 relationalFilePathAndName: $"{saveAsFolderPath}/{fi.Name}",
                 fileContents: contents,
                 fileStorageProvider: p).Result;
 
-            var results = _client.File_GetVersionsInfo(fileRef);
+            var results = _clientWithPrefix.File_GetVersionsInfo(fileRef);
 
             double taken = (DateTime.UtcNow - start).TotalSeconds;
 
@@ -581,7 +898,7 @@ namespace Netigent.Utils.FileStoreIOTests
                 FileInfo fi = new FileInfo(fileAbsolutePath);
                 byte[] contents = File.ReadAllBytes(fi.FullName);
 
-                string fileRef = _client.File_UpsertAsyncV2($"{saveAsFolderPath}/{fi.Name}", contents, defaultStore).Result;
+                string fileRef = _clientWithPrefix.File_UpsertAsyncV2($"{saveAsFolderPath}/{fi.Name}", contents, defaultStore).Result;
             }
 
             double taken = (DateTime.UtcNow - start).TotalSeconds;
@@ -607,13 +924,13 @@ namespace Netigent.Utils.FileStoreIOTests
         {
             DateTime start = DateTime.UtcNow;
 
-            var fileList = _client.Files_GetAllV2(folderQuery);
+            var fileList = _clientWithPrefix.Files_GetAllV2(folderQuery);
             int i = 0;
             foreach (var item in fileList)
             {
                 try
                 {
-                    var fileContents = _client.File_GetAsyncV2(item.FileRef).Result;
+                    var fileContents = _clientWithPrefix.File_GetAsyncV2(item.FileRef).Result;
                     if (fileContents?.Data?.Length > 0)
                     {
                         i++;
@@ -656,7 +973,7 @@ namespace Netigent.Utils.FileStoreIOTests
         {
             DateTime start = DateTime.UtcNow;
 
-            var fileList = _client.Files_GetAllV2(folderQuery, false);
+            var fileList = _clientWithPrefix.Files_GetAllV2(folderQuery, false);
             int i = 0;
 
             foreach (var item in fileList)
@@ -695,7 +1012,7 @@ namespace Netigent.Utils.FileStoreIOTests
             Assert.That(fileList?.Count > 0 && fileList.Count == i, "Delete failed");
         }
 
-        
+
         [TestCase(FileStorageProvider.FileSystem, _stdImgFile, _appPrefix)]
         [TestCase(FileStorageProvider.S3, _stdImgFile, _appPrefix)]
         [TestCase(FileStorageProvider.Box, _stdImgFile, _appPrefix)]
@@ -730,7 +1047,7 @@ namespace Netigent.Utils.FileStoreIOTests
             ).Result;
 
             // Move file
-            var newPathTags = new[] { "Test", "New", fi.Name};
+            var newPathTags = new[] { "Test", "New", fi.Name };
             var moveResult = localClient.File_MoveAsync(fileRef, newPathTags).Result;
 
             Assert.IsTrue(moveResult.Success, string.Join(", ", moveResult.Messages));

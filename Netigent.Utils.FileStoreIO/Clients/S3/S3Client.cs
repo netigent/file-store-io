@@ -2,6 +2,7 @@
 using Amazon.S3.Model;
 using Netigent.Utils.FileStoreIO.Enums;
 using Netigent.Utils.FileStoreIO.Extensions;
+using Netigent.Utils.FileStoreIO.Helpers;
 using Netigent.Utils.FileStoreIO.Models;
 using System;
 using System.Collections.Generic;
@@ -20,7 +21,7 @@ namespace Netigent.Utils.FileStoreIO.Clients.S3
 
         public bool HasInit { get; set; } = false;
 
-        private char ClientDirectoryChar => '/';
+        private char ClientDirectoryChar = '/';
 
         // If this exists it will be the 1st main folder used...
         private string AppCodePrefix { get; set; } = string.Empty;
@@ -82,14 +83,14 @@ namespace Netigent.Utils.FileStoreIO.Clients.S3
         #endregion
 
         #region Implementation
-        public async Task<long> IndexContentsAsync(ObservableCollection<InternalFileModel> indexList, string indexPathTags, bool scopeToAppFolder)
+        public async Task<long> IndexContentsAsync(ObservableCollection<FileStoreItem> indexList, string indexFolder, bool scopeToAppFolder)
         {
             // Should we prepend AppCodePrefix
             string searchingPath = scopeToAppFolder
-                ? AppCodePrefix + ClientDirectoryChar.ToString() + indexPathTags
-                : indexPathTags;
+                ? AppCodePrefix + ClientDirectoryChar.ToString() + indexFolder
+                : indexFolder;
 
-            IList<InternalFileModel> output = await GetPageAsync(searchingPath, null);
+            IList<FileStoreItem> output = await GetPageAsync(searchingPath, null);
 
             if (output.Count > 0)
             {
@@ -99,12 +100,13 @@ namespace Netigent.Utils.FileStoreIO.Clients.S3
             return output.Count;
         }
 
-        public async Task<string> SaveFileAsync(InternalFileModel fileModel)
+        public async Task<string> SaveFileAsync(FileStoreItem fileModel)
         {
             // Aws Key restrictions
             // https://docs.aws.amazon.com/AmazonS3/latest/userguide/object-keys.html
-            PathInfo fileInfo = fileModel.GetPathInfo(usePathSeparator: ClientDirectoryChar);
-            string encAwsFileKey = fileInfo.RelativeFilePath.SafeFilename(replaceForbiddenFilenameChar: '_', allowExtendedAscii: true, new[] { '/' });
+            string encAwsFileKey = $"{fileModel.Folder}{fileModel.NameWithVersion}"
+                .ToRelativeFile(includePrefix: AppCodePrefix, useRelativeRoot: string.Empty, useSeperator: ClientDirectoryChar)
+                .SafeFilename(replaceForbiddenFilenameChar: '_', allowExtendedAscii: true, [ClientDirectoryChar]);
 
             using (var ms = new MemoryStream(fileModel.Data))
             {
@@ -114,7 +116,6 @@ namespace Netigent.Utils.FileStoreIO.Clients.S3
                     Key = encAwsFileKey,
                     InputStream = ms,
                     CalculateContentMD5Header = true,
-
                 };
 
                 var httpResponse = await _awsClient.PutObjectAsync(request: putRequest);
@@ -127,10 +128,8 @@ namespace Netigent.Utils.FileStoreIO.Clients.S3
             return string.Empty;
         }
 
-        public async Task<InternalFileModel> GetFileAsync(string extClientRef)
+        public async Task<byte[]> GetFileAsync(string extClientRef)
         {
-            PathInfo fileInfo = extClientRef.GetPathInfo();
-
             var getRequest = new GetObjectRequest
             {
                 BucketName = awsBucketName,
@@ -139,14 +138,8 @@ namespace Netigent.Utils.FileStoreIO.Clients.S3
 
             var httpResponse = await _awsClient.GetObjectAsync(request: getRequest);
             using (var binaryReader = new BinaryReader(httpResponse.ResponseStream))
-
             {
-                return new InternalFileModel
-                {
-                    Data = binaryReader.ReadBytes((int)httpResponse.ResponseStream.Length),
-                    Name = fileInfo.Filename,
-                    Extension = fileInfo.FileExtension,
-                };
+                return binaryReader.ReadBytes((int)httpResponse.ResponseStream.Length);
             }
         }
 
@@ -159,7 +152,7 @@ namespace Netigent.Utils.FileStoreIO.Clients.S3
             };
 
             var httpResponse = await _awsClient.DeleteObjectAsync(request);
-            return httpResponse.HttpStatusCode == System.Net.HttpStatusCode.NoContent; ;
+            return httpResponse.HttpStatusCode == System.Net.HttpStatusCode.NoContent;
         }
         #endregion
 
@@ -177,9 +170,9 @@ namespace Netigent.Utils.FileStoreIO.Clients.S3
             return null;
         }
 
-        private async Task<IList<InternalFileModel>> GetPageAsync(string indexFromLocation, string continuationToken = null)
+        private async Task<IList<FileStoreItem>> GetPageAsync(string indexFromLocation, string continuationToken = null)
         {
-            List<InternalFileModel> output = new();
+            List<FileStoreItem> output = new();
             ListObjectsV2Request request = new ListObjectsV2Request()
             {
                 BucketName = awsBucketName,
@@ -194,19 +187,19 @@ namespace Netigent.Utils.FileStoreIO.Clients.S3
                 {
                     var s3Object = httpResponse.S3Objects[i];
                     string unEncKey = HttpUtility.UrlDecode(s3Object.Key);
-                    var fileInfo = unEncKey.GetPathInfo();
+                    var extension = Path.GetExtension(unEncKey);
 
-                    output.Add(new InternalFileModel
+                    output.Add(new FileStoreItem
                     {
-                        Name = fileInfo.FilenameNoExtension,
+                        Name = Path.GetFileNameWithoutExtension(unEncKey),
                         Description = string.Empty,
                         ExtClientRef = s3Object.Key, // Ensure to take key as-is
-                        PathTags = fileInfo.PathTags,
+                        Folder = unEncKey.ToRelativeFolder(),
                         Created = s3Object.LastModified,
                         Modified = s3Object.LastModified,
-                        Extension = fileInfo.FileExtension,
+                        Extension = Path.GetExtension(unEncKey),
                         FileLocation = (int)FileStorageProvider.S3,
-                        MimeType = fileInfo.MimeType,
+                        MimeType = MimeHelper.GetMimeType(extension),
                         SizeInBytes = s3Object.Size,
                     });
                 }
@@ -220,6 +213,5 @@ namespace Netigent.Utils.FileStoreIO.Clients.S3
             return output;
         }
         #endregion
-
     }
 }
