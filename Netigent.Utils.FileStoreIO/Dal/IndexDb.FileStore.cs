@@ -8,7 +8,7 @@ namespace Netigent.Utils.FileStoreIO.Dal
     internal partial class IndexDb
     {
         /// <summary>
-        /// Get List of fileRecords as List<InternalFileModel> from FileStoreIndex, with a variety of patterns.
+        /// Get List of fileRecords as List<FileStoreItem> from FileStoreIndex, with a variety of patterns.
         /// </summary>
         /// <param name="pathToSearch">FilePath e.g. './Brochures/222/', 'Brochures/32', './SALES/Training/ColdCalling/'</param>
         /// <param name="subFolders">Include all subFolders?</param>
