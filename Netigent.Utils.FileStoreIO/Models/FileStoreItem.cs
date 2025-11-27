@@ -47,7 +47,7 @@ namespace Netigent.Utils.FileStoreIO.Models
 
         public string MainGroup(string appPrefix)
         {
-            string[] folder = Folder.SplitToTags();
+            string[] folder = Folder.Replace("./", string.Empty).SplitToTags();
             bool hasAppPrefix = folder.Length > 0 && folder[0].Equals(appPrefix, StringComparison.InvariantCultureIgnoreCase);
 
             return hasAppPrefix
@@ -57,7 +57,7 @@ namespace Netigent.Utils.FileStoreIO.Models
 
         public string SubGroup(string appPrefix)
         {
-            string[] folder = Folder.SplitToTags();
+            string[] folder = Folder.Replace("./", string.Empty).SplitToTags();
             bool hasAppPrefix = folder.Length > 0 && folder[0].Equals(appPrefix, StringComparison.InvariantCultureIgnoreCase);
 
             return hasAppPrefix
