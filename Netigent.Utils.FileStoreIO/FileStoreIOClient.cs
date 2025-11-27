@@ -1,5 +1,4 @@
-﻿using Microsoft.AspNetCore.Http;
-using Microsoft.Extensions.Options;
+﻿using Microsoft.Extensions.Options;
 using Netigent.Utils.FileStoreIO.Clients;
 using Netigent.Utils.FileStoreIO.Clients.Box;
 using Netigent.Utils.FileStoreIO.Clients.FileSystem;
@@ -12,7 +11,6 @@ using Netigent.Utils.FileStoreIO.Models;
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
-using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 
@@ -27,11 +25,11 @@ namespace Netigent.Utils.FileStoreIO
 
         public bool IsReady { get; set; } = false;
 
-        public char PathSeperator => SystemConstants.InternalDirectorySeparator;
+        public char FolderSeperator => SystemConstants.InternalDirectorySeparator;
 
         public string AppPrefix => _appPrefix ?? string.Empty;
 
-        private readonly InternalDatabaseClient _dbClient;
+        private readonly IndexDb _dbClient;
         private readonly string _filePrefix;
         private readonly string _appPrefix;
         private readonly FileStorageProvider _defaultStorage;
@@ -54,7 +52,7 @@ namespace Netigent.Utils.FileStoreIO
             _filePrefix = fileIOConfig.Value.FilePrefix ?? _notSpecifiedFlag;
             _appPrefix = fileIOConfig.Value.AppPrefix ?? string.Empty;
             _maxVersions = fileIOConfig.Value.MaxVersions > 1 ? fileIOConfig.Value.MaxVersions : 1;
-            _dbClient = new InternalDatabaseClient(fileIOConfig.Value.Database, fileIOConfig.Value.DatabaseSchema, _appPrefix);
+            _dbClient = new IndexDb(fileIOConfig.Value.Database, fileIOConfig.Value.DatabaseSchema, _appPrefix);
             _defaultStorage = fileIOConfig.Value.DefaultStorage != FileStorageProvider.UseDefault
                 ? fileIOConfig.Value.DefaultStorage
                 : FileStorageProvider.Database;
@@ -96,7 +94,7 @@ namespace Netigent.Utils.FileStoreIO
                 : FileStorageProvider.Database;
 
             //Create the filestore client
-            _dbClient = new InternalDatabaseClient(databaseConnection, dbSchema, _appPrefix);
+            _dbClient = new IndexDb(databaseConnection, dbSchema, _appPrefix);
             IsReady = Internal_StartupCheck();
 
             if (IsReady)
@@ -116,96 +114,108 @@ namespace Netigent.Utils.FileStoreIO
             return StoreProvidersList.FirstOrDefault(x => x.StoreType == fileStorageProvider)?.IsAvailable ?? false;
         }
 
-        /// <inheritdoc />
-        public async Task<string> File_UpsertAsyncV2(string relationalFilePathAndName, byte[] fileContents, FileStorageProvider fileStorageProvider = FileStorageProvider.UseDefault, string description = "", DateTime created = default)
-        {
-            PathInfo pathInfo = relationalFilePathAndName.GetPathInfo(addRootFolderPrefix: _appPrefix);
-
-            var createdDate = created == default ? DateTime.UtcNow : created;
-
-            var fileModel = new InternalFileModel
-            {
-                Created = createdDate,
-                MimeType = pathInfo.MimeType,
-                Extension = pathInfo.FileExtension,
-                Name = pathInfo.FilenameNoExtension,
-                Description = description ?? pathInfo.FilenameNoExtension,
-                FileLocation = fileStorageProvider == FileStorageProvider.UseDefault ? (int)_defaultStorage : (int)fileStorageProvider,
-                PathTags = pathInfo.PathTags,
-                ExtClientRef = relationalFilePathAndName,
-                Data = fileContents,
-            };
-
-            return await Internal_UpsertAsync(fileModel, fileStorageProvider);
-        }
-
-        /// <inheritdoc />
-        public async Task<string> File_UpsertAsyncV2(
-            string relationalFilePathAndName,
-            IFormFile file,
-            FileStorageProvider fileStorageProvider = FileStorageProvider.UseDefault,
-            string description = "",
-            DateTime created = default)
-        {
-            byte[] data = null;
-
-            using (var dataStream = new MemoryStream())
-            {
-                await file.CopyToAsync(dataStream);
-                data = dataStream.ToArray();
-            }
-
-            return await File_UpsertAsyncV2(
-                relationalFilePathAndName: relationalFilePathAndName.EndsWith(file.FileName, StringComparison.InvariantCultureIgnoreCase)
-                    ? relationalFilePathAndName // Its got the filename already
-                    : relationalFilePathAndName + SystemConstants.InternalDirectorySeparator + file.FileName,
-                fileContents: data,
-                fileStorageProvider: fileStorageProvider,
-                description: description ?? file.FileName,
-                created: created == default ? DateTime.UtcNow : created);
-
-        }
-
         /// <inheritdoc/>
         public async Task<string> File_UpsertAsyncV2(
             byte[] fileContents,
             string filename,
-            string[] pathTags,
+            string[] folders,
             FileStorageProvider fileStorageProvider = FileStorageProvider.UseDefault,
             string description = "",
-            DateTime created = default) =>
+            DateTime created = default,
+            string uploadedBy = "",
+            int? priorCopies = null) =>
 
             // Repoint to new method
             await File_UpsertAsyncV2(
-                relationalFilePathAndName: $"{string.Join(SystemConstants.InternalDirectorySeparator.ToString(), pathTags)}{SystemConstants.InternalDirectorySeparator.ToString()}{filename}",
+                relationalFilePathAndName: $"{string.Join(SystemConstants.InternalDirectorySeparator.ToString(), folders)}{SystemConstants.InternalDirectorySeparator.ToString()}{filename}",
                 fileContents: fileContents,
                 fileStorageProvider: fileStorageProvider,
                 description: description,
-                created: created);
-
-        /// <inheritdoc/>
-        public async Task<string> File_UpsertAsyncV2(
-            IFormFile file,
-            string filename,
-            string[] pathTags,
-            FileStorageProvider fileStorageProvider = FileStorageProvider.UseDefault,
-            string description = "",
-            DateTime created = default) =>
-
-            // Repoint to new method
-            await File_UpsertAsyncV2(
-                relationalFilePathAndName: $"{string.Join(SystemConstants.InternalDirectorySeparator.ToString(), pathTags)}{SystemConstants.InternalDirectorySeparator.ToString()}{filename}",
-                file: file,
-                fileStorageProvider: fileStorageProvider,
-                description: description,
-                created: created);
-
-        /// <inheritdoc/>
-        public List<InternalFileModel> Files_GetAllV2(string[] pathTags, bool recursiveSearch = true) =>
-           Files_GetAllV2(relationalFilePath: $"{string.Join(SystemConstants.InternalDirectorySeparator.ToString(), pathTags)}", recursiveSearch);
+                created: created,
+                uploadedBy: uploadedBy,
+                priorCopies: priorCopies);
 
         /// <inheritdoc />
-        public async Task<FileObjectModel> File_GetAsyncV2(string fileRef, int priorVersion = 0)
+        public async Task<string> File_UpsertAsyncV2(
+            string relationalFilePathAndName,
+            byte[] fileContents,
+            FileStorageProvider fileStorageProvider = FileStorageProvider.UseDefault,
+            string description = "",
+            DateTime created = default,
+            string uploadedBy = "",
+            int? priorCopies = null)
+        {
+            // Pick the client based on target.
+            FileStorageProvider saveTo = fileStorageProvider == FileStorageProvider.UseDefault ? _defaultStorage : fileStorageProvider;
+
+            // Number of priorCopies of the file, if greater than whats in the appSettings then allow override
+            int historicalCopies = (priorCopies ?? 1) > _maxVersions ? (priorCopies ?? 1) : _maxVersions;
+
+            // Cast as FileStoreItem
+            var fileStoreItem = new FileStoreItem(
+                fullPath: relationalFilePathAndName,
+                contents: fileContents,
+                fsp: saveTo,
+                appPrefix: _appPrefix,
+                description: description,
+                created: created,
+                uploadedBy: uploadedBy);
+
+            // if files exist with same name, extension and fullFilePath, then consider it the same file,
+            // Its upto the write2file etc to store as versioned
+            var existingFilesList = Files_GetByFileAndFolder(
+                folderPath: fileStoreItem.Folder,
+                includeSubFolders: false,
+                fileToFind: fileStoreItem.NameNoVersionWithExt,
+                exactFileMatch: true);
+
+            // Have we got existing files?
+            if (existingFilesList?.Count() > 0)
+            {
+                var f = existingFilesList.FirstOrDefault();
+                fileStoreItem.FileRef = f.FileRef;
+
+                // Rewrite with version increment
+                // fileStoreItem.Name = $"{fileStoreItem.Name}{_versionFlag}{maxFileId}";
+                fileStoreItem.Version = _dbClient.FileStoreIndex_GetVersionId(f.Folder, f.Name, f.Extension);
+            }
+            else
+            {
+                //Assign unique fileRef code
+                fileStoreItem.FileRef = Internal_FindNewFileRef();
+            }
+
+            // Save the file to the endProvider and create the db record.
+            fileStoreItem = await Internal_SaveDataToProviderAsync(fileStoreItem, saveTo);
+
+            if (fileStoreItem.Id > 0)
+            {
+                // Ensure the Id was def entered
+                string fileRef = _dbClient.FileStoreIndex_GetFileRef(fileStoreItem.Id);
+                if (!string.IsNullOrEmpty(fileRef))
+                {
+                    // Ensure we dont have more versions of the file than permitted.
+                    List<FileStoreItem> fileCopies = _dbClient.FileStoreIndex_GetAllByRef(fileRef);
+                    if (fileCopies?.Count > historicalCopies)
+                    {
+                        for (int i = historicalCopies; i < fileCopies.Count; i++)
+                        {
+                            // Prune versions beyond, max copies
+                            var file2Delete = fileCopies[i];
+                            _ = await Internal_DeleteFileAsync(file2Delete, removeDbReference: true, deleteAllIfBox: false);
+                        }
+                    }
+
+                    // All is right with the world, return inserted id
+                    return fileRef;
+                }
+            }
+
+            return string.Empty;
+        }
+
+        /// <inheritdoc />
+        public async Task<FileOutput> File_GetAsyncV2(string fileRef, int priorVersion = 0)
         {
             //Grab the fileRecord and if stored in database (this doesnt get the binary in the dataField)
             var fileList = _dbClient.FileStoreIndex_GetAllByRef(fileRef);
@@ -214,20 +224,20 @@ namespace Netigent.Utils.FileStoreIO
             if (fileList?.Count > 0 && fileList?.Count > priorVersion)
             {
                 //Try and get the file from index
-                InternalFileModel? file2Get = fileList[priorVersion];
+                FileStoreItem? file2Get = fileList[priorVersion];
 
                 if (file2Get != null)
                 {
                     // Pull specific file by id
                     // If this is a DB record it will now have the data
-                    InternalFileModel populatedFile = await Internal_GetFileAsync(_dbClient.FileStoreIndex_Get(file2Get.Id));
+                    FileStoreItem populatedFile = await Internal_GetFileAsync(_dbClient.FileStoreIndex_Get(file2Get.Id));
 
-                    return new FileObjectModel
+                    return new FileOutput
                     {
                         FileRef = populatedFile.FileRef,
-                        ContentType = populatedFile.MimeType,
-                        Description = $"{populatedFile.Description} {(populatedFile.VersionInfo > 0 ? $"(Version: {populatedFile.VersionInfo})" : string.Empty)}",
-                        Name = $"{populatedFile.OrginalNameWithExt}",
+                        MimeType = populatedFile.MimeType,
+                        Description = $"{populatedFile.Description} (Version: {populatedFile.Version})",
+                        FullName = $"{populatedFile.NameNoVersionWithExt}",
                         Data = populatedFile.Data,
                     }; ;
                 }
@@ -237,19 +247,20 @@ namespace Netigent.Utils.FileStoreIO
         }
 
         /// <inheritdoc/>
-        public List<InternalFileModel> Files_GetAllV2(string relationalFilePath, bool recursiveSearch = false)
-        {
-            if (!string.IsNullOrEmpty(_appPrefix) &&
-                !relationalFilePath.DropFirstChar(new char[] { '\\', '|', '/' }).StartsWith(_appPrefix) &&
-                PathExtension.IsRelativePath(relationalFilePath))
-            {
-                return _dbClient.FileStoreIndex_GetAllByLocation(pathToSearch: $"{_appPrefix}{SystemConstants.InternalDirectorySeparator}{relationalFilePath}", recursiveSearch);
-            }
-            else
-            {
-                return _dbClient.FileStoreIndex_GetAllByLocation(pathToSearch: relationalFilePath, recursiveSearch);
-            }
-        }
+        public List<FileStoreItem> Files_GetByFolder(string folderPath, bool includeSubFolders = false) =>
+            Files_GetByFileAndFolder(
+                folderPath: folderPath,
+                includeSubFolders: includeSubFolders,
+                fileToFind: string.Empty,
+                exactFileMatch: false);
+
+        /// <inheritdoc/>
+        public List<FileStoreItem> Files_GetByFileAndFolder(string folderPath, bool includeSubFolders, string fileToFind, bool exactFileMatch) =>
+            _dbClient.FileStoreIndex_GetAllByFolder(
+                pathToSearch: $"{folderPath.TrimEnd(['\\', '|', '/'])}{SystemConstants.InternalDirectorySeparator}".ToRelativeFolder(includePrefix: _appPrefix),
+                subFolders: includeSubFolders,
+                fileToFind: fileToFind,
+                exactFile: exactFileMatch);
 
         /// <inheritdoc />
         public async Task<bool> File_DeleteAsync(string fileRef)
@@ -260,7 +271,7 @@ namespace Netigent.Utils.FileStoreIO
                 if (!string.IsNullOrEmpty(fileRef))
                 {
                     // Ensure we dont have more versions of the file than permitted.
-                    List<InternalFileModel> fileCopies = File_GetVersionsInfo(fileRef);
+                    List<FileStoreItem> fileCopies = File_GetVersionsInfo(fileRef);
                     if (fileCopies?.Count > 0)
                     {
                         for (int i = 0; i < fileCopies.Count; i++)
@@ -280,7 +291,7 @@ namespace Netigent.Utils.FileStoreIO
         }
 
         /// <inheritdoc/>
-        public List<InternalFileModel> File_GetVersionsInfo(string fileRef)
+        public List<FileStoreItem> File_GetVersionsInfo(string fileRef)
         {
             // Ensure the Id was def entered
             if (!string.IsNullOrEmpty(fileRef))
@@ -318,14 +329,14 @@ namespace Netigent.Utils.FileStoreIO
                         try
                         {
                             // Fetch the binary from the endProvider, and save to new location
-                            var fetchFile = new InternalFileModel(await Internal_GetFileAsync(existingFile));
+                            var fetchFile = new FileStoreItem(await Internal_GetFileAsync(existingFile));
                             long sourceFileSize = fetchFile.Data.LongLength;
 
-                            InternalFileModel updatedFile = await Internal_SaveDataToProviderAsync(
+                            FileStoreItem updatedFile = await Internal_SaveDataToProviderAsync(
                                 fileModel: fetchFile,
                                 saveToLocation: saveTo);
 
-                            var verifyFetchFile = new InternalFileModel(await Internal_GetFileAsync(updatedFile));
+                            var verifyFetchFile = new FileStoreItem(await Internal_GetFileAsync(updatedFile));
 
                             if (verifyFetchFile.Data.LongLength != sourceFileSize)
                             {
@@ -405,9 +416,9 @@ namespace Netigent.Utils.FileStoreIO
         }
 
         /// <inheritdoc/>
-        public async Task<ResultModel> File_MoveAsync(string fileRef, string[] pathTags)
+        public async Task<ResultModel> File_MoveAsync(string fileRef, string[] Folder)
         {
-            var relationalFilePathAndName = $"{string.Join(SystemConstants.InternalDirectorySeparator.ToString(), pathTags)}";
+            var relationalFilePathAndName = $"{string.Join(SystemConstants.InternalDirectorySeparator.ToString(), Folder)}";
             return await File_MoveAsync(fileRef, relationalFilePathAndName);
         }
 
@@ -416,7 +427,6 @@ namespace Netigent.Utils.FileStoreIO
         {
             bool overallStatus = true;
             List<string> messages = new();
-            PathInfo pathInfo = relationalFilePathAndName.GetPathInfo(addRootFolderPrefix: _appPrefix);
 
             // Get all versions of the file in ascending order (oldest first)
             var getFileVersions = File_GetVersionsInfo(fileRef).OrderBy(x => x.Id).ToList();
@@ -430,27 +440,16 @@ namespace Netigent.Utils.FileStoreIO
                     {
                         // Fetch the binary from the existing location and save it to the new location
                         var fetchFile = await Internal_GetFileAsync(existingFile);
-                        var newFile = new InternalFileModel
-                        {
-                            Created = fetchFile.Created,
-                            MimeType = pathInfo.MimeType,
-                            Extension = pathInfo.FileExtension,
-                            Name = pathInfo.FilenameNoExtension,
-                            Description = fetchFile.Description,
-                            FileLocation = fetchFile.FileLocation,
-                            PathTags = pathInfo.PathTags,
-                            ExtClientRef = relationalFilePathAndName,
-                            FileRef = fileRef,
-                            Data = fetchFile.Data,
-                        };
+                        var newFile = fetchFile.UpdateLocation(relationalFilePathAndName, includeAppPrefix: AppPrefix);
+
                         long sourceFileSize = newFile.Data.LongLength;
 
-                        InternalFileModel updatedFile = await Internal_SaveDataToProviderAsync(
+                        FileStoreItem updatedFile = await Internal_SaveDataToProviderAsync(
                             fileModel: newFile,
                             saveToLocation: FileStorageProviderExts.GetProvider(newFile.FileLocation)
                         );
 
-                        var verifyFetchFile = new InternalFileModel(await Internal_GetFileAsync(updatedFile));
+                        var verifyFetchFile = new FileStoreItem(await Internal_GetFileAsync(updatedFile));
 
                         if (verifyFetchFile.Data.LongLength != sourceFileSize)
                         {
@@ -481,11 +480,35 @@ namespace Netigent.Utils.FileStoreIO
 
             return new ResultModel { Success = overallStatus, Messages = messages };
         }
-        
+
+        #region ListFiles (old)
+        // These items will be deprecated
+
+        /// <inheritdoc/>
+        public List<FileStoreItem> Files_GetAllV2(string[] pathTags, bool recursiveSearch = true) =>
+           Files_GetAllV2(relationalFilePath: $"{string.Join(SystemConstants.InternalDirectorySeparator.ToString(), pathTags)}", recursiveSearch);
+
+        /// <inheritdoc/>
+        public List<FileStoreItem> Files_GetAllV2(string relationalFilePath, bool recursiveSearch = false)
+        {
+            string searchFolder = !string.IsNullOrEmpty(_appPrefix) &&
+                !relationalFilePath.DropFirstChar(['\\', '|', '/']).StartsWith(_appPrefix) &&
+                !IoExtensions.IsAbsolutePath(relationalFilePath)
+                ? $"{_appPrefix}{SystemConstants.InternalDirectorySeparator}{relationalFilePath}"
+                : relationalFilePath;
+
+            return _dbClient.FileStoreIndex_GetAllByFolder(pathToSearch: searchFolder, recursiveSearch);
+        }
+        #endregion
+
+        #endregion
+
+        #region Internal Functions
+
         private long NewlyAddedFiles { get; set; } = 0;
 
         /// <inheritdoc />
-        private ObservableCollection<InternalFileModel> fileIndex = new();
+        private ObservableCollection<FileStoreItem> fileIndex = new();
 
         private void FileIndex_CollectionChanged(object sender, System.Collections.Specialized.NotifyCollectionChangedEventArgs e)
         {
@@ -516,90 +539,8 @@ namespace Netigent.Utils.FileStoreIO
                     break;
             }
         }
-        
-        #endregion
 
-        #region Will Speak to binary providers only
-        /// <summary>
-        /// Insert / Update a File to the intended file storage
-        /// </summary>
-        /// <param name="fileObject">The file to save, ensure the file is saved as byte[] to Data</param>
-        /// <param name="targetStorageProvider">Where to store file, current options FileSystem or Database</param>
-        /// <returns>A unique file-reference for getting the file, if blank issues creating the file</returns>
-        private async Task<string> Internal_UpsertAsync(InternalFileModel fileObject, FileStorageProvider targetStorageProvider = FileStorageProvider.UseDefault)
-        {
-            // Pick the client based on target.
-            FileStorageProvider saveTo = targetStorageProvider == FileStorageProvider.UseDefault ? _defaultStorage : targetStorageProvider;
-
-            // if files exist with same name, extension and fullFilePath, then consider it the same file,
-            // Its upto the write2file etc to store as versioned
-            var existingFilesList = Files_GetAllV2(
-                relationalFilePath: fileObject.PathTags.SetPathSeparator(SystemConstants.InternalDirectorySeparator),
-                recursiveSearch: false)
-                .Where(x =>
-                x.Extension.Equals(fileObject.Extension, StringComparison.InvariantCultureIgnoreCase) &&
-                x.Name.StartsWith(fileObject.Name, StringComparison.InvariantCultureIgnoreCase));
-
-            // Have we got existing files?
-            if (existingFilesList?.Count() > 0)
-            {
-                fileObject.FileRef = existingFilesList.FirstOrDefault().FileRef;
-
-                int maxFileId = 1;
-                // Figure out highestId
-                foreach (var existingFile in existingFilesList)
-                {
-                    string[] parts = existingFile.Name.Split(new string[] { _versionFlag }, StringSplitOptions.RemoveEmptyEntries);
-                    if (parts.Length > 1)
-                    {
-                        _ = Int32.TryParse(s: parts[1], out int existingMaxId);
-                        if (existingMaxId >= maxFileId)
-                        {
-                            maxFileId = existingMaxId + 1;
-                        }
-                    }
-
-                }
-
-                // Rewrite with version increment
-                fileObject.Name = $"{fileObject.Name}{_versionFlag}{maxFileId}";
-            }
-            else
-            {
-                //Assign unique fileRef code
-                fileObject.FileRef = Internal_FindNewFileRef();
-            }
-
-            // Save the file to the endProvider and create the db record.
-            fileObject = await Internal_SaveDataToProviderAsync(fileObject, saveTo);
-
-            if (fileObject.Id > 0)
-            {
-                // Ensure the Id was def entered
-                string fileRef = _dbClient.FileStoreIndex_GetFileRef(fileObject.Id);
-                if (!string.IsNullOrEmpty(fileRef))
-                {
-                    // Ensure we dont have more versions of the file than permitted.
-                    List<InternalFileModel> fileCopies = _dbClient.FileStoreIndex_GetAllByRef(fileRef);
-                    if (fileCopies?.Count > _maxVersions)
-                    {
-                        for (int i = _maxVersions; i < fileCopies.Count; i++)
-                        {
-                            // Prune versions beyond, max copies
-                            var file2Delete = fileCopies[i];
-                            _ = await Internal_DeleteFileAsync(file2Delete, removeDbReference: true, deleteAllIfBox: false);
-                        }
-                    }
-
-                    // All is right with the world, return inserted id
-                    return fileRef;
-                }
-            }
-
-            return string.Empty;
-        }
-
-        private long Internal_UpsertIndexAsync(ObservableCollection<InternalFileModel> fileCollection)
+        private long Internal_UpsertIndexAsync(ObservableCollection<FileStoreItem> fileCollection)
         {
             long newIndexes = 0;
             var indexcollection = fileCollection.ToList();
@@ -610,7 +551,7 @@ namespace Netigent.Utils.FileStoreIO
                 {
                     // if files exist with same name, extentsion and groups, then consider it the same file,
                     // Its upto the write2file etc to store as versioned
-                    var existingFilesList = Files_GetAllV2(fileRecord.PathTags).Where(x =>
+                    var existingFilesList = Files_GetAllV2(fileRecord.Folder).Where(x =>
                         x.Extension.Equals(fileRecord.Extension, StringComparison.InvariantCultureIgnoreCase) &&
                         x.Name.StartsWith(fileRecord.Name, StringComparison.InvariantCultureIgnoreCase));
 
@@ -660,18 +601,13 @@ namespace Netigent.Utils.FileStoreIO
             return true;
         }
 
-
-        #endregion
-
-        #region Internal BinaryWrappers
-
         /// <summary>
         /// Save the file to the chosen end provider, if its db it will insert the record
         /// </summary>
         /// <param name="fileModel"></param>
         /// <param name="saveToLocation"></param>
         /// <returns></returns>
-        private async Task<InternalFileModel> Internal_SaveDataToProviderAsync(InternalFileModel fileModel, FileStorageProvider saveToLocation)
+        private async Task<FileStoreItem> Internal_SaveDataToProviderAsync(FileStoreItem fileModel, FileStorageProvider saveToLocation)
         {
             fileModel.SizeInBytes = fileModel.Data?.LongLength ?? -1;
 
@@ -720,7 +656,7 @@ namespace Netigent.Utils.FileStoreIO
         /// <param name="fileModel"></param>
         /// <param name="removeDbReference"></param>
         /// <returns></returns>
-        private async Task<bool> Internal_DeleteFileAsync(InternalFileModel fileModel, bool removeDbReference = true, bool deleteAllIfBox = false)
+        private async Task<bool> Internal_DeleteFileAsync(FileStoreItem fileModel, bool removeDbReference = true, bool deleteAllIfBox = false)
         {
             // If Non-Db Location
             if (fileModel.FileLocation != (int)FileStorageProvider.Database)
@@ -755,7 +691,7 @@ namespace Netigent.Utils.FileStoreIO
         /// </summary>
         /// <param name="fileModel"></param>
         /// <returns></returns>
-        private async Task<InternalFileModel> Internal_GetFileAsync(InternalFileModel fileModel)
+        private async Task<FileStoreItem> Internal_GetFileAsync(FileStoreItem fileModel)
         {
             // Pick the client based on where file is stored
             if (fileModel.FileLocation != (int)FileStorageProvider.Database)
@@ -763,7 +699,7 @@ namespace Netigent.Utils.FileStoreIO
                 IClient? storeClient = Internal_GetClient(fileModel.FileLocation);
                 if (storeClient?.HasInit == true)
                 {
-                    fileModel.Data = (await storeClient.GetFileAsync(fileModel.ExtClientRef)).Data;
+                    fileModel.Data = await storeClient.GetFileAsync(fileModel.ExtClientRef);
                 }
                 else
                 {

@@ -211,7 +211,7 @@ internal class Program
                 var fileInfo = uFiles[i];
                 var vh = _client.File_GetVersionsInfo(fileInfo.FileRef);
 
-                LogMessage($"{i + 1}:\tRef:{fileInfo.FileRef}\tVersions: {vh.Count}\tLocation: {GetLocation(fileInfo.FileLocation)}\t{fileInfo.OrginalNameWithExt}");
+                LogMessage($"{i + 1}:\tRef:{fileInfo.FileRef}\tVersions: {vh.Count}\tLocation: {GetLocation(fileInfo.FileLocation)}\t{fileInfo.NameNoVersionWithExt}");
             }
         }
         else
@@ -284,7 +284,7 @@ internal class Program
 
                 for (int z = 0; z < vh.Count; z++)
                 {
-                    LogMessage($"{i + 1}:\tRef:{fileInfo.FileRef}\tVersion #:{z}\tLocation: {GetLocation(fileInfo.FileLocation)}\t{fileInfo.OrginalNameWithExt}", false);
+                    LogMessage($"{i + 1}:\tRef:{fileInfo.FileRef}\tVersion #:{z}\tLocation: {GetLocation(fileInfo.FileLocation)}\t{fileInfo.NameNoVersionWithExt}", false);
 
                     var fileObject = await _client.File_GetAsyncV2(fileInfo.FileRef, z);
 
@@ -327,7 +327,7 @@ internal class Program
 
         if (fi != null)
         {
-            LogMessage($"Confirm Delete '{fi.OrginalNameWithExt}' in {GetLocation(fi.FileLocation)} (y/n)?", true, ConsoleColor.Cyan);
+            LogMessage($"Confirm Delete '{fi.NameNoVersionWithExt}' in {GetLocation(fi.FileLocation)} (y/n)?", true, ConsoleColor.Cyan);
 
             string confirm = (Console.ReadLine() ?? "").Trim().ToLower();
 
@@ -459,7 +459,7 @@ internal class Program
         if (result.Success)
         {
             LogMessage("Confirming...", false, ConsoleColor.Yellow);
-            FileObjectModel? checkFile = await _client.File_GetAsyncV2(fileRef, 0);
+            FileOutput? checkFile = await _client.File_GetAsyncV2(fileRef, 0);
 
             if (checkFile != null && checkFile?.Data?.LongLength > 0)
             {

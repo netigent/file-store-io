@@ -2,6 +2,6 @@
 {
     public static class SystemConstants
     {
-        public static char InternalDirectorySeparator = '/';
+        public const char InternalDirectorySeparator = '/';
     }
 }

@@ -1,5 +1,6 @@
 ﻿using Netigent.Utils.FileStoreIO.Enums;
 using Netigent.Utils.FileStoreIO.Extensions;
+using Netigent.Utils.FileStoreIO.Helpers;
 using Netigent.Utils.FileStoreIO.Models;
 using System;
 using System.Collections.Generic;
@@ -22,9 +23,6 @@ namespace Netigent.Utils.FileStoreIO.Clients.FileSystem
 
         private string FileStoreRoot { get; set; } = string.Empty;
 
-        // If this exists it will be the 1st main folder used...
-
-        private char ClientDirectoryChar => '\\';
         private string AppCodePrefix { get; set; } = string.Empty;
 
         private const string TestFile = "TestFile90u34gj93p4n3p9wcfp3h4pc9qf.txt";
@@ -42,9 +40,9 @@ namespace Netigent.Utils.FileStoreIO.Clients.FileSystem
         {
             if (config?.StoreType == ProviderType)
             {
-                FileSystemConfig fsConfig = config as FileSystemConfig;
+                FileSystemConfig? fsConfig = config as FileSystemConfig;
 
-                if (!string.IsNullOrEmpty(fsConfig.RootFolder))
+                if (fsConfig != null && !string.IsNullOrEmpty(fsConfig.RootFolder))
                 {
                     FileStoreRoot = fsConfig.RootFolder;
                     UseUniqueNames = fsConfig.StoreFileAsUniqueRef;
@@ -81,17 +79,16 @@ namespace Netigent.Utils.FileStoreIO.Clients.FileSystem
         #endregion
 
         #region Implementation
-        public async Task<string> SaveFileAsync(InternalFileModel fileModel)
+        public async Task<string> SaveFileAsync(FileStoreItem fileModel)
         {
             if (!HasInit)
             {
                 throw new Exception($"File System Location {FileStoreRoot}, is not available or accessible, check permissions etc");
             }
 
-            // Ensure folder exists
-            string absoluteFolder = AsAbsolutePath(fileModel.PathTags
-                .SetPathSeparator(ClientDirectoryChar) // Replace all / | \ with \
-                .SafeFilename(replaceForbiddenFilenameChar: '_', allowExtendedAscii: true, ignorePathSeperators: new[] { ClientDirectoryChar }));
+            string absoluteFolder = fileModel.Folder
+                .ToAbsolutePath(FileStoreRoot, AppCodePrefix)
+                .SafeFilename(replaceForbiddenFilenameChar: '_', allowExtendedAscii: true, ignorePathSeperators: [CurrentSeperator]);
 
             bool absoluteFolderExists = Directory.Exists(absoluteFolder);
             if (!absoluteFolderExists)
@@ -100,14 +97,11 @@ namespace Netigent.Utils.FileStoreIO.Clients.FileSystem
             }
 
             // Ensure safe filename for windows.
-            string fileNameWithExt = $"{fileModel.Name}{fileModel.Extension}"
+            string fileNameWithExt = fileModel.NameWithVersion
                 .SafeFilename(replaceForbiddenFilenameChar: '_', allowExtendedAscii: true);
 
             // Full filepath
             string absoluteFile = Path.Combine(absoluteFolder, fileNameWithExt);
-
-            // Strip relative path..
-            PathInfo relativeFile = absoluteFile.GetPathInfo(removeRootFolderPrefix: FileStoreRoot);
 
             // Wipe any blocking files with same name...
             if (File.Exists(absoluteFile))
@@ -121,18 +115,22 @@ namespace Netigent.Utils.FileStoreIO.Clients.FileSystem
                 await stream.WriteAsync(fileModel.Data, 0, fileModel.Data.Length);
             }
 
-            // Relative File will be stored in index
-            return absoluteFile.GetPathInfo(removeRootFolderPrefix: FileStoreRoot).RelativeFilePath;
+            // If root matches, then remove and return a relative file path.
+            string extPath = absoluteFile
+                .RemoveRootFolder(FileStoreRoot)
+                .ToRelativeFile(useRelativeRoot: string.Empty, useSeperator: CurrentSeperator);
+
+            return extPath;
         }
 
-        public async Task<InternalFileModel> GetFileAsync(string filePath)
+        public async Task<byte[]> GetFileAsync(string filePath)
         {
             if (!HasInit)
             {
                 throw new Exception($"File System Location {FileStoreRoot}, is not available or accessible, check permissions etc");
             }
 
-            string absoluteFilePath = AsAbsolutePath(filePath);
+            string absoluteFilePath = filePath.ToAbsolutePath(FileStoreRoot, includePrefix: AppCodePrefix);
 
             if (!File.Exists(absoluteFilePath))
                 return null;
@@ -147,12 +145,7 @@ namespace Netigent.Utils.FileStoreIO.Clients.FileSystem
             }
             memory.Position = 0;
 
-            return new InternalFileModel
-            {
-                Data = memory.ToArray(),
-                Name = fileInfo.Name,
-                Extension = fileInfo.Extension,
-            };
+            return memory.ToArray();
         }
 
         public Task<bool> DeleteFileAsync(string fileId)
@@ -163,7 +156,7 @@ namespace Netigent.Utils.FileStoreIO.Clients.FileSystem
             }
 
             // This will be the true path
-            string absoluteFilePath = AsAbsolutePath(fileId);
+            string absoluteFilePath = fileId.ToAbsolutePath(rootFolder: FileStoreRoot, includePrefix: AppCodePrefix);
 
             if (File.Exists(absoluteFilePath))
             {
@@ -173,14 +166,9 @@ namespace Netigent.Utils.FileStoreIO.Clients.FileSystem
             return Task.FromResult(true);
         }
 
-        public async Task<long> IndexContentsAsync(ObservableCollection<InternalFileModel> indexList, string indexPathTags, bool scopeToAppFolder)
+        public async Task<long> IndexContentsAsync(ObservableCollection<FileStoreItem> indexList, string indexFolder, bool scopeToAppFolder)
         {
-            // Should we prepend AppCodePrefix
-            string searchingPath = scopeToAppFolder && PathExtension.IsRelativePath(indexPathTags)
-                ? AppCodePrefix + ClientDirectoryChar.ToString() + indexPathTags
-                : indexPathTags;
-
-            IList<InternalFileModel> output = await IndexFolderAsync(AsAbsolutePath(searchingPath));
+            IList<FileStoreItem> output = await IndexFolderAsync(indexFolder.ToAbsolutePath(FileStoreRoot, includePrefix: AppCodePrefix));
             if (output.Count > 0)
             {
                 indexList.InsertRange(output);
@@ -189,10 +177,10 @@ namespace Netigent.Utils.FileStoreIO.Clients.FileSystem
             return output.Count;
         }
 
-        private async Task<IList<InternalFileModel>> IndexFolderAsync(string currentPathTags)
+        private async Task<IList<FileStoreItem>> IndexFolderAsync(string currentFolder)
         {
-            List<InternalFileModel> output = new();
-            var contents = new DirectoryInfo(currentPathTags);
+            List<FileStoreItem> output = new();
+            var contents = new DirectoryInfo(currentFolder);
             if (contents.Exists)
             {
                 foreach (var folderItem in contents.GetDirectories())
@@ -202,19 +190,20 @@ namespace Netigent.Utils.FileStoreIO.Clients.FileSystem
 
                 foreach (var fileItem in contents.GetFiles())
                 {
-                    PathInfo filePathInfo = fileItem.FullName.GetPathInfo(removeRootFolderPrefix: FileStoreRoot);
+                    string fullPath = fileItem.FullName;
+                    var extension = Path.GetExtension(fullPath);
 
-                    output.Add(new InternalFileModel
+                    output.Add(new FileStoreItem
                     {
-                        Name = filePathInfo.FilenameNoExtension,
-                        Description = filePathInfo.Filename,
-                        ExtClientRef = filePathInfo.RelativeFilePath,
+                        Name = Path.GetFileNameWithoutExtension(fileItem.FullName),
+                        Description = string.Empty,
+                        ExtClientRef = fullPath.RemoveRootFolder(FileStoreRoot).ToRelativeFile(useRelativeRoot: ""),
                         Created = fileItem.CreationTimeUtc,
                         Modified = fileItem.LastWriteTimeUtc,
-                        Extension = filePathInfo.FileExtension,
+                        Extension = extension,
                         FileLocation = (int)FileStorageProvider.FileSystem,
-                        PathTags = filePathInfo.PathTags,
-                        MimeType = filePathInfo.MimeType,
+                        Folder = fullPath.RemoveRootFolder(FileStoreRoot).ToRelativeFile(),
+                        MimeType = MimeHelper.GetMimeType(extension),
                         SizeInBytes = fileItem.Length,
                     });
                 }
@@ -225,32 +214,7 @@ namespace Netigent.Utils.FileStoreIO.Clients.FileSystem
         #endregion
 
         #region Internal Functions
-        private string AsAbsolutePath(string filePath)
-        {
-
-            if (string.IsNullOrEmpty(filePath))
-            {
-                return FileStoreRoot;
-            }
-
-            // Is the file absolute location??
-            if (filePath.Contains(_fileFlag)
-                || filePath.StartsWith(_networkFlag, StringComparison.InvariantCultureIgnoreCase)
-                || filePath.StartsWith(FileStoreRoot))
-            {
-                return filePath.SetPathSeparator(ClientDirectoryChar);
-            }
-            else if (filePath.Contains(_internetFlag))
-            {
-                return filePath.SetPathSeparator('/');
-            }
-
-            // Treat as relative
-            else
-            {
-                return Path.Combine(FileStoreRoot, filePath).SetPathSeparator(ClientDirectoryChar);
-            }
-        }
+        private char CurrentSeperator => IoExtensions.GetPathSeparator(FileStoreRoot);
         #endregion
     }
 }

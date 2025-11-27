@@ -1,33 +1,9 @@
-using Dapper;
 using System;
-using System.Collections.Generic;
-using System.Data.SqlClient;
-using System.Linq;
 
 namespace Netigent.Utils.FileStoreIO.Dal
 {
-    public partial class InternalDatabaseClient
+    internal partial class IndexDb
     {
-        public string DbClientErrorMessage { get; private set; } = string.Empty;
-
-        public bool IsReady;
-
-        private readonly string _schemaName;
-        private readonly string _appPrefix;
-
-        private string _managementConnection { get; }
-
-        public InternalDatabaseClient(string sqlManagementConnection, string schemaName, string appPrefix)
-        {
-            _managementConnection = sqlManagementConnection;
-            _schemaName = schemaName;
-            _appPrefix = appPrefix;
-
-            IsReady = InitializeDatabase(out string errorMessage);
-            DbClientErrorMessage = errorMessage;
-        }
-
-        #region Database I/O
         private bool InitializeDatabase(out string errors)
         {
             errors = string.Empty;
@@ -196,72 +172,24 @@ namespace Netigent.Utils.FileStoreIO.Dal
             try
             {
                 var appendingEndTag = $@"
-                    UPDATE FILESTORE.[FileStoreIndex]
-                        SET [PathTags] = [PathTags] + '/'
-                    WHERE RIGHT([PathTags], 1) <> '/'
-                        ";
+                    IF NOT EXISTS (SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = '{_schemaName}' AND TABLE_NAME = 'FileStoreIndex' AND COLUMN_NAME = 'Folder')
+                    BEGIN
+                          ALTER TABLE [{_schemaName}].[FileStoreIndex] ADD
+							  [Folder] varchar(2048) null,
+							  [Version] int null;
+	                          
+							  EXEC('UPDATE [{_schemaName}].[FileStoreIndex] SET [PathTags] = LEFT([PathTags], LEN([PathTags]) - 1) WHERE [PathTags] LIKE ''%/''')
+							  EXEC('UPDATE [{_schemaName}].[FileStoreIndex] SET [Folder] = CONCAT(''./'',PathTags,''/''), [Version] = 1')
+                    END";
 
                 ExecuteQuery(appendingEndTag, null);
             }
             catch (Exception ex)
             {
-                errors = $"Failed Adding v1.3.1 end tag, {ex.Message}";
+                errors = $"Failed Adding v1.4.0 Folder and Version, {ex.Message}";
                 return false;
             }
-
             return true;
         }
-
-        private List<T> RunQueryToList<T>(string query, DynamicParameters parms = null, string dbConnection = "")
-        {
-            List<T> output;
-
-            var connectionString = string.IsNullOrEmpty(dbConnection) ? _managementConnection : dbConnection;
-
-            //try get model from database
-            using (var connection = new SqlConnection(connectionString))
-            {
-                connection.Open();
-                output = connection.Query<T>(query, parms).ToList();
-                connection.Close();
-            }
-
-            return output;
-        }
-
-        private T RunQuery<T>(string query, DynamicParameters parms = null, string dbConnection = "")
-        {
-            T output;
-
-            var connectionString = string.IsNullOrEmpty(dbConnection) ? _managementConnection : dbConnection;
-
-            //try get model from database
-            using (var connection = new SqlConnection(connectionString))
-            {
-                connection.Open();
-                output = connection.Query<T>(query, parms).FirstOrDefault();
-                connection.Close();
-            }
-
-            return output;
-        }
-
-        private int ExecuteQuery(string query, DynamicParameters parms = null, string dbConnection = "")
-        {
-            int rowCount;
-
-            var connectionString = string.IsNullOrEmpty(dbConnection) ? _managementConnection : dbConnection;
-
-            //try get model from database
-            using (var connection = new SqlConnection(connectionString))
-            {
-                connection.Open();
-                rowCount = connection.Execute(query, parms);
-                connection.Close();
-            }
-
-            return rowCount;
-        }
-        #endregion
     }
 }
