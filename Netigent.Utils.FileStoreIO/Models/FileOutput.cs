@@ -11,7 +11,7 @@
         public string FileRef { get; set; }
 
         /// <summary>
-        /// Name of the File with extension.
+        /// Name of the File with extension e.g. Summary.pdf
         /// </summary>
         public string FullName { get; set; }
 
@@ -21,7 +21,7 @@
         public string Description { get; set; }
 
         /// <summary>
-        /// What MimeType is the file according to Extension.
+        /// What MimeType is the file according to Extension e.g. application/pdf
         /// </summary>
         public string MimeType { get; set; }
 

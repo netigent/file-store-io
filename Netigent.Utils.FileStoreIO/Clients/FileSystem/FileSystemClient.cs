@@ -87,8 +87,7 @@ namespace Netigent.Utils.FileStoreIO.Clients.FileSystem
             }
 
             string absoluteFolder = fileModel.Folder
-                .ToAbsolutePath(FileStoreRoot, AppCodePrefix)
-                .SafeFilename(replaceForbiddenFilenameChar: '_', allowExtendedAscii: true, ignorePathSeperators: [CurrentSeperator]);
+                .ToAbsolutePath(FileStoreRoot, AppCodePrefix);
 
             bool absoluteFolderExists = Directory.Exists(absoluteFolder);
             if (!absoluteFolderExists)

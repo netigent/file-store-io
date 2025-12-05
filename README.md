@@ -8,6 +8,9 @@ In terms of using the Library the following should get you up and running quickl
 **Database** The library will autocreate and upgrade filestore table {schema}.[FileStoreIndex]. You can then manually remove column no longer used [FileType], [MainGroup] ,[SubGroup] from [FileStoreIndex] if you want - they're longer used!
 
 # Version Changes
+**1.4.1** 
+Bug fix on absolute paths in FileSystem storage
+
 **1.4.0** 
 The following methods have been marked Obsolete
 
